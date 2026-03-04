@@ -1,6 +1,19 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''Screenshot data length: {len\\(d[\"\"result\"\"]\\)}''\\)\")",
+      "mcp__browser__get_page_text",
+      "mcp__browser__screenshot",
+      "mcp__browser__navigate",
+      "mcp__browser__evaluate",
+      "mcp__browser__fill",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''Stats API: {len\\(d\\)} keys, totalCount={d.get\\(\"\"totalCount\"\", \"\"N/A\"\"\\)}''\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''Options API \\(org\\): {len\\(d.get\\(\"\"options\"\", d\\)\\)} options''\\)\")",
+      "Bash(python3 -m json.tool)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "browser"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
