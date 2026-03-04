@@ -1,0 +1,21 @@
+services:
+  vote01:
+    image: vote_image:latest
+    container_name: vote_container
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TZ: ${TZ:-America/Los_Angeles}
+        CLAUDE_CODE_VERSION: latest
+        GIT_DELTA_VERSION: 0.18.2
+        ZSH_IN_DOCKER_VERSION: 1.2.0
+    volumes:
+      - ..:/workspace:delegated
+      - /data/wzx/docker_volumes/command_history:/commandhistory
+      - /data/wzx/docker_volumes/claude_config:/root/.claude
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=4096
+      - CLAUDE_CONFIG_DIR=/root/.claude
+      - POWERLEVEL9K_DISABLE_GITSTATUS=true
+    command: sleep infinity
