@@ -7,7 +7,6 @@ services:
       dockerfile: Dockerfile
       args:
         TZ: ${TZ:-America/Los_Angeles}
-        CLAUDE_CODE_VERSION: latest
         GIT_DELTA_VERSION: 0.18.2
         ZSH_IN_DOCKER_VERSION: 1.2.0
     volumes:
@@ -18,4 +17,44 @@ services:
       - NODE_OPTIONS=--max-old-space-size=4096
       - CLAUDE_CONFIG_DIR=/root/.claude
       - POWERLEVEL9K_DISABLE_GITSTATUS=true
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/vps_vote?schema=public
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
     command: sleep infinity
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: vote_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vps_vote
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vote_redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

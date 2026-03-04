@@ -2,13 +2,15 @@
 
 > **使用方式：** 每个阶段对应一次 Claude Code 会话。启动新会话时发送 `请执行阶段 N`，Claude Code 将读取本文件对应章节 + CLAUDE.md 恢复上下文，然后阅读参考文档开始工作。
 
+> **运行环境：** Claude Code 运行在 devcontainer 内（`.devcontainer/docker-compose.yml`）。PostgreSQL 和 Redis 作为 sidecar 服务已随容器启动，通过内部网络访问（`postgres:5432`、`redis:6379`）。环境变量 `DATABASE_URL` 和 `REDIS_URL` 已由容器注入。容器内无 Docker daemon，不可执行 `docker` / `docker compose` 命令。端口 3000 已映射到宿主机，可通过宿主机浏览器访问开发服务器。
+
 ---
 
 ## 阶段〇：文档通读 → 生成 CLAUDE.md + 权限配置
 
 > `请执行阶段〇`
 
-**任务：** 通读 docs/ 下全部文档，生成 CLAUDE.md（含项目状态、技术栈、关键约束、文档索引），初始化 `.claude/settings.json` 权限配置。
+**任务：** 通读 docs/ 下全部文档，生成 CLAUDE.md（含项目状态、技术栈、关键约束、文档索引），初始化 `.claude/settings.json` 权限配置，配置 `.gitignore`（排除 `node_modules/`、`.env.local`、`.next/`、`prisma/*.db` 等敏感文件和构建产物）。
 
 **参考文档：** 全部 docs/
 
@@ -22,7 +24,7 @@
 - IP 查询结果不做名称映射，原始值直接填入，提交时走 AI 归类
 - 选项列表 API 的 layer 仅支持 org/asn/protocol/keyConfig
 
-**完成标志：** CLAUDE.md 存在且包含所有关键约束，`.claude/settings.json` 就绪，git 有初始 commit。
+**完成标志：** CLAUDE.md 存在且包含所有关键约束，`.claude/settings.json` 就绪，`.gitignore` 已配置（至少排除 `.env.local`、`node_modules/`、`.next/`），git 有初始 commit。
 
 ---
 
@@ -34,8 +36,8 @@
 
 **任务：**
 1. 项目初始化（Next.js 14 + Shadcn/ui + 全部依赖）
-2. 启动开发环境（docker-compose.dev.yml: PostgreSQL + Redis）
-3. 生成 Prisma Schema、Zod validators、TypeScript 类型、预设数据、环境变量、全局单例
+2. ~~启动开发环境~~ ✓ 已由 devcontainer 提供（PostgreSQL + Redis 作为 sidecar 服务随容器启动）
+3. 生成 Prisma Schema、Zod validators、TypeScript 类型、预设数据、环境变量（`.env.local` 需包含 `deployment.md` 中列出的全部变量，AI 相关变量值留空占位）、全局单例
 4. prisma generate + db push + seed
 5. 生成 Docker 生产配置（留待阶段六使用）
 
@@ -63,6 +65,8 @@
 ## 阶段三：动态选项与 AI 匹配队列
 
 > `请执行阶段三`
+
+**前置条件：** 开始编码前，先询问用户获取 AI 相关环境变量的值（`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_LIGHT`、`AI_MODEL_FULL`），填入 `.env.local` 对应位置。
 
 **参考文档：** `modules/dynamic-options.md`（全文）、`modules/ai-report.md` 三（匹配 Prompt）
 
@@ -104,7 +108,7 @@
 1. /api/report 路由（POST 生成 + GET 获取）
 2. 报告页面（生成按钮 + Markdown 渲染 + 过期提示）
 
-**完成标志：** GET /api/report 无报告时 404，POST 生成后 GET 返回报告内容。
+**完成标志：** GET /api/report 无报告时 404，POST 生成后 GET 返回报告内容。（需 AI API 可用，否则仅验证 404 逻辑和代码编译通过）
 
 ---
 
@@ -114,12 +118,15 @@
 
 **参考文档：** `modules/deployment.md`、`modules/rate-limit.md` 三
 
-**任务：**
+**任务（Claude Code）：**
 1. UI 完善：响应式适配、深色模式、加载状态与骨架屏、指纹防伪强化
-2. Docker 生产构建验证
-3. 端到端验收
+2. 确保 Docker 生产配置文件正确（阶段一已生成，此处复查）
 
-**验收清单：**
+**任务（用户手动）：**
+3. Docker 生产构建验证（`docker compose up`）
+4. 端到端验收
+
+**验收清单（用户手动）：**
 - [ ] docker compose up 三服务全部 healthy
 - [ ] seed 数据导入成功
 - [ ] 预设选项投票 → resolved=true → 旭日图展示
@@ -131,7 +138,7 @@
 - [ ] 限流触发 429
 - [ ] 移动端 + 深色模式正常
 
-**完成标志：** 全部验收通过，CLAUDE.md 更新为"全部完成"。
+**完成标志：** Claude Code 完成 UI 完善 + 配置复查，用户手动完成部署验收后，更新 CLAUDE.md 为"全部完成"。
 
 ---
 

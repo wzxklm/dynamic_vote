@@ -98,3 +98,11 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
 # Install Claude Code (native installer, no longer via npm)
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
+# ========== 开发环境依赖（阶段一） ==========
+
+# PostgreSQL 客户端 + Redis 工具（用于 prisma 连接和调试）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  postgresql-client \
+  redis-tools \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
