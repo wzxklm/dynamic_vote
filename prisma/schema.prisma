@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Vote {
+  id          String   @id @default(cuid())
+  isBlocked   Boolean
+  org         String
+  asn         String
+  usage       String
+  protocol    String?
+  keyConfig   String?
+  count       Int      @default(1)
+  resolved    Boolean  @default(false)
+  queueFailed Boolean  @default(false)
+  fingerprint String
+  createdAt   DateTime @default(now())
+
+  @@index([resolved, isBlocked, org, asn, usage])
+  @@index([resolved])
+}
+
+model DynamicOption {
+  id          String   @id @default(cuid())
+  layer       String
+  parentKey   String   @default("")
+  value       String
+  isPreset    Boolean  @default(false)
+  submitCount Int      @default(0)
+  promoted    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contributors OptionContributor[]
+
+  @@unique([layer, value, parentKey])
+  @@index([layer, promoted])
+  @@index([layer, parentKey])
+}
+
+model OptionContributor {
+  id          String   @id @default(cuid())
+  optionId    String
+  fingerprint String
+  createdAt   DateTime @default(now())
+
+  option DynamicOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, fingerprint])
+}
+
+model Report {
+  id                     String   @id @default(cuid())
+  content                String
+  generatedAt            DateTime @default(now())
+  totalVotesAtGeneration Int
+}
