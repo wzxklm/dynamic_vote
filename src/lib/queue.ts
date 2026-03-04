@@ -158,7 +158,14 @@ function initWorkers(): Record<string, Worker<MatchJobData>> {
   for (const layer of LAYERS) {
     workers[layer] = new Worker<MatchJobData>(
       `match-${layer}`,
-      async (job) => processMatchJob(job),
+      async (job) => {
+        // Handle orphan recovery jobs on the org queue
+        if (job.name === "orphan-recovery") {
+          await recoverOrphanVotes();
+          return;
+        }
+        await processMatchJob(job);
+      },
       {
         ...connection,
         concurrency: 1,
@@ -285,29 +292,6 @@ export function initQueueSystem(): void {
     .catch((err) => {
       console.error("[Queue] Failed to register orphan recovery:", err);
     });
-
-  // Add special handling for orphan recovery jobs in the org worker
-  const orgWorker = globalForQueues.matchWorkers?.org;
-  if (orgWorker) {
-    // Replace the org worker to handle both match and orphan-recovery jobs
-    orgWorker.close();
-
-    globalForQueues.matchWorkers.org = new Worker<MatchJobData>(
-      "match-org",
-      async (job) => {
-        if (job.name === "orphan-recovery") {
-          await recoverOrphanVotes();
-          return;
-        }
-        await processMatchJob(job);
-      },
-      {
-        ...connection,
-        concurrency: 1,
-        limiter: { max: 10, duration: 60_000 },
-      }
-    );
-  }
 }
 
 // Auto-initialize when this module is imported
