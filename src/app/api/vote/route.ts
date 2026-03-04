@@ -7,9 +7,19 @@ import {
   checkVoteRateLimit,
   validateFingerprint,
   checkFingerprintAntiForge,
+  validateRequestHeaders,
 } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  // Request header validation (detect non-browser clients)
+  const headerCheck = validateRequestHeaders(request.headers);
+  if (!headerCheck.valid) {
+    return NextResponse.json(
+      { error: headerCheck.error || "请求特征异常" },
+      { status: 400 }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

@@ -131,3 +131,33 @@ export async function checkFingerprintAntiForge(
 
   return { valid: true };
 }
+
+/**
+ * Validate request headers to detect non-browser automated requests.
+ * Checks User-Agent and Accept-Language for basic browser characteristics.
+ */
+export function validateRequestHeaders(headers: Headers): {
+  valid: boolean;
+  error?: string;
+} {
+  const userAgent = headers.get("user-agent") || "";
+  const acceptLanguage = headers.get("accept-language") || "";
+
+  // Reject empty or very short User-Agent (likely bots/scripts)
+  if (!userAgent || userAgent.length < 20) {
+    return { valid: false, error: "请求特征异常" };
+  }
+
+  // Reject common bot/script User-Agents
+  const botPatterns = /curl|wget|python|httpie|postman|insomnia|node-fetch|axios/i;
+  if (botPatterns.test(userAgent)) {
+    return { valid: false, error: "请求特征异常" };
+  }
+
+  // Require Accept-Language header (browsers always send this)
+  if (!acceptLanguage) {
+    return { valid: false, error: "请求特征异常" };
+  }
+
+  return { valid: true };
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef } from "react";
+import { useTheme } from "next-themes";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
 import { SunburstChart as SunburstChartType } from "echarts/charts";
@@ -17,6 +18,8 @@ interface SunburstChartProps {
 
 export default function SunburstChart({ data, total }: SunburstChartProps) {
   const chartRef = useRef<ReactEChartsCore>(null);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const handleClick = useCallback(
     (params: { data?: SunburstNode; treePathInfo?: Array<{ name: string }> }) => {
@@ -29,6 +32,11 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
     () => ({
       tooltip: {
         trigger: "item" as const,
+        backgroundColor: isDark ? "rgba(30,30,30,0.95)" : "rgba(255,255,255,0.95)",
+        borderColor: isDark ? "#444" : "#ccc",
+        textStyle: {
+          color: isDark ? "#eee" : "#333",
+        },
         formatter: (params: {
           name: string;
           value: number;
@@ -70,31 +78,31 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
               r0: "10%",
               r: "28%",
               itemStyle: { borderWidth: 2 },
-              label: { fontSize: 14, fontWeight: "bold" as const },
+              label: { fontSize: 14, fontWeight: "bold" as const, color: isDark ? "#eee" : undefined },
             },
             {
               r0: "28%",
               r: "44%",
               itemStyle: { borderWidth: 2 },
-              label: { fontSize: 12 },
+              label: { fontSize: 12, color: isDark ? "#ddd" : undefined },
             },
             {
               r0: "44%",
               r: "58%",
               itemStyle: { borderWidth: 1 },
-              label: { fontSize: 11 },
+              label: { fontSize: 11, color: isDark ? "#ccc" : undefined },
             },
             {
               r0: "58%",
               r: "70%",
               itemStyle: { borderWidth: 1 },
-              label: { fontSize: 10 },
+              label: { fontSize: 10, color: isDark ? "#bbb" : undefined },
             },
             {
               r0: "70%",
               r: "82%",
               itemStyle: { borderWidth: 1 },
-              label: { fontSize: 9 },
+              label: { fontSize: 9, color: isDark ? "#aaa" : undefined },
             },
             {
               r0: "82%",
@@ -105,20 +113,21 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
                 position: "outside" as const,
                 padding: 3,
                 silent: false,
+                color: isDark ? "#999" : undefined,
               },
             },
           ],
         },
       ],
     }),
-    [data, total]
+    [data, total, isDark]
   );
 
   const onEvents = useMemo(() => ({ click: handleClick }), [handleClick]);
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[500px] text-gray-500">
+      <div className="flex items-center justify-center h-[400px] sm:h-[500px] text-muted-foreground">
         暂无统计数据，快去投票吧！
       </div>
     );
@@ -129,7 +138,7 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
       ref={chartRef}
       echarts={echarts}
       option={option}
-      style={{ height: "600px", width: "100%" }}
+      style={{ height: "min(600px, 80vh)", width: "100%" }}
       onEvents={onEvents}
       notMerge={true}
     />
