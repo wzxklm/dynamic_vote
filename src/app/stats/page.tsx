@@ -31,10 +31,11 @@ function formatTimeAgo(isoString: string): string {
   return `${Math.floor(hours / 24)} 天前`;
 }
 
-export default function Home() {
+export default function StatsPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -55,11 +56,47 @@ export default function Home() {
     fetchStats();
   }, [fetchStats]);
 
+  const handleExport = useCallback(async () => {
+    try {
+      setExporting(true);
+      const res = await fetch("/api/export");
+      if (!res.ok) throw new Error("导出失败");
+      const markdown = await res.text();
+
+      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "vps-ip-stats.md";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }, []);
+
+  const handleCopyMarkdown = useCallback(async () => {
+    try {
+      setExporting(true);
+      const res = await fetch("/api/export");
+      if (!res.ok) throw new Error("导出失败");
+      const markdown = await res.text();
+      await navigator.clipboard.writeText(markdown);
+      alert("已复制到剪贴板");
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }, []);
+
   return (
     <main className="min-h-screen p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold">VPS IP 封锁投票统计</h1>
+          <h1 className="text-3xl font-bold">详细统计</h1>
           {stats && (
             <p className="text-sm text-gray-500 mt-1">
               共 {stats.total} 台 · 数据更新于 {formatTimeAgo(stats.updatedAt)}
@@ -67,11 +104,22 @@ export default function Home() {
           )}
         </div>
         <div className="flex gap-3">
-          <Link href="/vote">
-            <Button>参与投票</Button>
-          </Link>
-          <Link href="/stats">
-            <Button variant="outline">详细统计</Button>
+          <Button
+            variant="outline"
+            onClick={handleCopyMarkdown}
+            disabled={exporting || !stats}
+          >
+            复制 Markdown
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={exporting || !stats}
+          >
+            导出 Markdown
+          </Button>
+          <Link href="/">
+            <Button variant="outline">返回首页</Button>
           </Link>
         </div>
       </div>
