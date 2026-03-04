@@ -127,7 +127,7 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[400px] sm:h-[500px] text-muted-foreground">
+      <div className="flex items-center justify-center h-[600px] sm:h-[800px] text-muted-foreground">
         暂无统计数据，快去投票吧！
       </div>
     );
@@ -138,7 +138,7 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
       ref={chartRef}
       echarts={echarts}
       option={option}
-      style={{ height: "min(600px, 80vh)", width: "100%" }}
+      style={{ height: "min(900px, 85vh)", width: "100%" }}
       onEvents={onEvents}
       notMerge={true}
     />
