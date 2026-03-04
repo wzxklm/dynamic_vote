@@ -73,6 +73,9 @@ export default function Home() {
           <Link href="/stats">
             <Button variant="outline">详细统计</Button>
           </Link>
+          <Link href="/report">
+            <Button variant="outline">AI 报告</Button>
+          </Link>
         </div>
       </div>
 

@@ -42,3 +42,10 @@ export interface ExportRow {
   parentRatio: string;
   totalRatio: string;
 }
+
+export interface ReportResponse {
+  report: string;
+  generatedAt: string;
+  totalVotesAtGeneration: number;
+  currentTotalVotes?: number;
+}
