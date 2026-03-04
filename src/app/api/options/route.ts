@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { redis } from "@/lib/db";
 
 const VALID_LAYERS = ["org", "asn", "protocol", "keyConfig"];
+const CACHE_TTL = 600; // 10 minutes in seconds
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -23,6 +25,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Check Redis cache
+  const cacheKey = parentKey ? `options:${layer}:${parentKey}` : `options:${layer}`;
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return NextResponse.json(JSON.parse(cached));
+  }
+
+  // Query database
   const options = await prisma.dynamicOption.findMany({
     where: {
       layer,
@@ -38,5 +48,10 @@ export async function GET(request: NextRequest) {
     orderBy: { value: "asc" },
   });
 
-  return NextResponse.json({ layer, options });
+  const result = { layer, options };
+
+  // Cache result
+  await redis.set(cacheKey, JSON.stringify(result), "EX", CACHE_TTL);
+
+  return NextResponse.json(result);
 }

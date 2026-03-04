@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { voteSchema } from "@/lib/validators";
 import { submitVote } from "@/lib/vote-service";
+import { addToMatchQueue } from "@/lib/queue";
+import { prisma } from "@/lib/db";
 import {
   checkVoteRateLimit,
   validateFingerprint,
@@ -61,6 +63,42 @@ export async function POST(request: NextRequest) {
 
   // Submit vote
   const result = await submitVote(data);
+
+  // Queue AI matching for custom fields (with retry)
+  if (result.customFields.length > 0) {
+    let allQueued = true;
+
+    for (const field of result.customFields) {
+      let queued = false;
+      // Retry up to 3 times with 1s interval
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          queued = await addToMatchQueue({
+            voteId: result.id,
+            layer: field.layer,
+            value: field.value,
+            parentKey: field.parentKey,
+            fingerprint: data.fingerprint,
+          });
+          if (queued) break;
+        } catch {
+          if (attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+      }
+
+      if (!queued) allQueued = false;
+    }
+
+    // If any queue failed, mark the vote
+    if (!allQueued) {
+      await prisma.vote.update({
+        where: { id: result.id },
+        data: { queueFailed: true },
+      });
+    }
+  }
 
   return NextResponse.json(
     { id: result.id, resolved: result.resolved },
