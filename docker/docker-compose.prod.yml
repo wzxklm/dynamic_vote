@@ -5,8 +5,10 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.prod
-    ports:
-      - "3000:3000"
+    # [移除] ports 暴露 — 通过 aperag-net 内网访问，无需映射宿主机端口
+    networks:
+      - internal
+      - aperag-net
     environment:
       - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/vps_vote?schema=public
       - REDIS_URL=redis://redis:6379
@@ -36,6 +38,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -48,6 +52,8 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    networks:
+      - internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -58,3 +64,11 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  # 服务内部通信网络（app <-> postgres/redis）
+  internal:
+    driver: bridge
+  # 与 nginx 共享的外部网络，nginx 通过服务名 "app" 访问
+  aperag-net:
+    external: true
