@@ -10,7 +10,7 @@ services:
       - internal
       - aperag-net
     environment:
-      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@postgres:5432/vps_vote?schema=public
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@vps-vote-db:5432/vps_vote?schema=public
       - REDIS_URL=redis://redis:6379
       - AI_BASE_URL=${AI_BASE_URL}
       - AI_API_KEY=${AI_API_KEY}
@@ -39,7 +39,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - internal
+      internal:
+        aliases:
+          - vps-vote-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
