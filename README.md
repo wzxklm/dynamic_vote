@@ -75,7 +75,7 @@ docker compose up -d --build
 首次部署需要导入预设选项（厂商、ASN、协议等）：
 
 ```bash
-docker compose exec app npx prisma db seed
+docker compose exec app node prisma/seed.js
 ```
 
 ### 6. 配置 Nginx 反向代理
