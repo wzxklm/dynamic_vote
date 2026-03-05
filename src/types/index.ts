@@ -39,7 +39,6 @@ export interface ExportRow {
   protocol: string;
   keyConfig: string;
   count: number;
-  parentRatio: string;
   totalRatio: string;
 }
 

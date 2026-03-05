@@ -218,7 +218,6 @@ export function treeToExportRows(tree: SunburstNode): ExportRow[] {
               protocol: "-",
               keyConfig: "-",
               count: usageNode.value,
-              parentRatio: formatPercent(usageNode.value, asnNode.value),
               totalRatio: formatPercent(usageNode.value, total),
             });
           } else if (usageNode.children) {
@@ -234,7 +233,6 @@ export function treeToExportRows(tree: SunburstNode): ExportRow[] {
                   protocol: protoNode.name,
                   keyConfig: kcNode.name,
                   count: kcNode.value,
-                  parentRatio: formatPercent(kcNode.value, protoNode.value),
                   totalRatio: formatPercent(kcNode.value, total),
                 });
               }
@@ -263,13 +261,13 @@ export function exportToMarkdown(tree: SunburstNode): string {
   const lines: string[] = [
     `总投票数: ${total} 台`,
     "",
-    "| 是否被封 | 厂商 | ASN | 用途 | 协议 | 关键配置 | 数量 | 占父级比 | 占总比 |",
-    "|----------|------|-----|------|------|----------|------|----------|--------|",
+    "| 是否被封 | 厂商 | ASN | 用途 | 协议 | 关键配置 | 数量 | 占总比 |",
+    "|----------|------|-----|------|------|----------|------|--------|",
   ];
 
   for (const row of rows) {
     lines.push(
-      `| ${row.isBlocked} | ${row.org} | ${row.asn} | ${row.usage} | ${row.protocol} | ${row.keyConfig} | ${row.count} | ${row.parentRatio} | ${row.totalRatio} |`
+      `| ${row.isBlocked} | ${row.org} | ${row.asn} | ${row.usage} | ${row.protocol} | ${row.keyConfig} | ${row.count} | ${row.totalRatio} |`
     );
   }
 
