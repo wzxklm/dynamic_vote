@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { ipLookupSchema } from "@/lib/validators";
 import { lookupIp } from "@/lib/ip-lookup";
