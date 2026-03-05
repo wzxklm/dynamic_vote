@@ -2,14 +2,22 @@ import OpenAI from "openai";
 
 const globalForAI = globalThis as unknown as { ai: OpenAI };
 
-export const ai =
-  globalForAI.ai ||
-  new OpenAI({
-    apiKey: process.env.AI_API_KEY,
-    baseURL: process.env.AI_BASE_URL,
-  });
+function getAI(): OpenAI {
+  if (!globalForAI.ai) {
+    globalForAI.ai = new OpenAI({
+      apiKey: process.env.AI_API_KEY,
+      baseURL: process.env.AI_BASE_URL,
+    });
+  }
+  return globalForAI.ai;
+}
 
-if (process.env.NODE_ENV !== "production") globalForAI.ai = ai;
+// Lazy accessor — only instantiated at runtime when first used
+export const ai = new Proxy({} as OpenAI, {
+  get(_target, prop) {
+    return (getAI() as unknown as Record<string | symbol, unknown>)[prop];
+  },
+});
 
 // --- AI Match Option ---
 
