@@ -32,10 +32,10 @@ cd dynamic_vote
 ### 2. 配置环境变量
 
 ```bash
-cp .env.example docker/.env
+cp .env.example .env
 ```
 
-编辑 `docker/.env`，至少填写以下必填项：
+编辑 `.env`，至少填写以下必填项：
 
 | 变量 | 说明 | 必填 |
 |------|------|:----:|
@@ -48,68 +48,91 @@ cp .env.example docker/.env
 
 完整变量说明见 [.env.example](.env.example)。
 
-### 3. 启动服务
+### 3. 加入 Docker 网络
+
+本项目不暴露宿主机端口，通过 Docker 内部网络与 Nginx 通信。确保 `aperag-net` 网络已存在：
 
 ```bash
-cd docker
-docker compose -f docker-compose.prod.yml up -d --build
+docker network ls | grep aperag-net
+# 不存在则创建
+docker network create aperag-net
+```
+
+### 4. 启动服务
+
+```bash
+docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
 首次构建需要几分钟。启动后：
 - app 容器会自动执行 `prisma migrate deploy` 创建数据库表
 - PostgreSQL 和 Redis 通过 healthcheck 确保就绪后 app 才启动
 
-### 4. 初始化预设数据
+### 5. 初始化预设数据
 
 首次部署需要导入预设选项（厂商、ASN、协议等）：
 
 ```bash
-docker compose -f docker-compose.prod.yml exec app npx prisma db seed
+docker compose -f docker/docker-compose.prod.yml exec app npx prisma db seed
 ```
 
-### 5. 验证
+### 6. 配置 Nginx 反向代理
 
-访问 `http://your-server-ip:3000`，应看到首页旭日图和投票入口。
-
-### Nginx 反向代理（可选）
-
-如需域名和 HTTPS，配置 Nginx 反向代理到 `localhost:3000`：
+app 服务加入了 `aperag-net` 网络，Nginx 通过服务名 `app` 访问，无需暴露端口：
 
 ```nginx
+upstream vote_backend {
+    server app:3000;
+}
+
 server {
-    listen 80;
+    listen 443 ssl http2;
     server_name your-domain.com;
 
+    ssl_certificate /path/to/cert.crt;
+    ssl_certificate_key /path/to/cert.key;
+
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://vote_backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
+```
+
+Nginx 容器本身也需要加入 `aperag-net` 网络，否则无法解析 `app` 服务名。
+
+### 7. 验证
+
+重载 Nginx 后访问配置的域名，应看到首页旭日图和投票入口：
+
+```bash
+docker exec nginx01 nginx -s reload
 ```
 
 ## 常用运维命令
 
 ```bash
-cd docker
-
 # 查看日志
-docker compose -f docker-compose.prod.yml logs -f app
+docker compose -f docker/docker-compose.prod.yml logs -f app
 
 # 重启服务
-docker compose -f docker-compose.prod.yml restart app
+docker compose -f docker/docker-compose.prod.yml restart app
 
 # 停止所有服务
-docker compose -f docker-compose.prod.yml down
+docker compose -f docker/docker-compose.prod.yml down
 
 # 停止并清除数据（⚠️ 会删除数据库和 Redis 数据）
-docker compose -f docker-compose.prod.yml down -v
+docker compose -f docker/docker-compose.prod.yml down -v
 
 # 更新部署（拉取最新代码后）
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
 ## 本地开发
