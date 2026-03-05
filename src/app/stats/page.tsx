@@ -110,7 +110,6 @@ function StatsTable({ tree }: { tree: StatsData["tree"] }) {
               <th className="px-3 py-2 text-left font-medium">协议</th>
               <th className="px-3 py-2 text-left font-medium">关键配置</th>
               <th className="px-3 py-2 text-right font-medium">数量</th>
-              <th className="px-3 py-2 text-right font-medium">占父级比</th>
               <th className="px-3 py-2 text-right font-medium">占总比</th>
             </tr>
           </thead>
@@ -128,7 +127,6 @@ function StatsTable({ tree }: { tree: StatsData["tree"] }) {
                 <td className="px-3 py-2">{row.protocol}</td>
                 <td className="px-3 py-2">{row.keyConfig}</td>
                 <td className="px-3 py-2 text-right font-medium">{row.count}</td>
-                <td className="px-3 py-2 text-right">{row.parentRatio}</td>
                 <td className="px-3 py-2 text-right">{row.totalRatio}</td>
               </tr>
             ))}
