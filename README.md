@@ -26,7 +26,7 @@ Next.js 14 (App Router) · TypeScript · Shadcn/ui · Tailwind CSS · ECharts ·
 
 ```bash
 git clone https://github.com/wzxklm/dynamic_vote.git
-cd dynamic_vote
+cd dynamic_vote/docker
 ```
 
 ### 2. 配置环境变量
@@ -35,7 +35,7 @@ cd dynamic_vote
 cp .env.example .env
 ```
 
-编辑 `.env`，至少填写以下必填项：
+编辑 `docker/.env`，至少填写以下必填项：
 
 | 变量 | 说明 | 必填 |
 |------|------|:----:|
@@ -46,7 +46,7 @@ cp .env.example .env
 | `AI_MODEL_FULL` | 完整模型（默认 `gemini-pro`） | |
 | `NEXT_PUBLIC_SITE_URL` | 站点公开 URL（默认 `http://localhost:3000`） | |
 
-完整变量说明见 [.env.example](.env.example)。
+完整变量说明见 [docker/.env.example](docker/.env.example)。
 
 ### 3. 加入 Docker 网络
 
@@ -60,8 +60,10 @@ docker network create aperag-net
 
 ### 4. 启动服务
 
+> 以下命令均在 `docker/` 目录下执行。
+
 ```bash
-docker compose -f docker/docker-compose.prod.yml up -d --build
+docker compose up -d --build
 ```
 
 首次构建需要几分钟。启动后：
@@ -73,7 +75,7 @@ docker compose -f docker/docker-compose.prod.yml up -d --build
 首次部署需要导入预设选项（厂商、ASN、协议等）：
 
 ```bash
-docker compose -f docker/docker-compose.prod.yml exec app npx prisma db seed
+docker compose exec app npx prisma db seed
 ```
 
 ### 6. 配置 Nginx 反向代理
@@ -117,22 +119,24 @@ docker exec nginx01 nginx -s reload
 
 ## 常用运维命令
 
+> 以下命令均在 `docker/` 目录下执行。
+
 ```bash
 # 查看日志
-docker compose -f docker/docker-compose.prod.yml logs -f app
+docker compose logs -f app
 
 # 重启服务
-docker compose -f docker/docker-compose.prod.yml restart app
+docker compose restart app
 
 # 停止所有服务
-docker compose -f docker/docker-compose.prod.yml down
+docker compose down
 
 # 停止并清除数据（⚠️ 会删除数据库和 Redis 数据）
-docker compose -f docker/docker-compose.prod.yml down -v
+docker compose down -v
 
 # 更新部署（拉取最新代码后）
-git pull
-docker compose -f docker/docker-compose.prod.yml up -d --build
+cd .. && git pull && cd docker
+docker compose up -d --build
 ```
 
 ## 本地开发
