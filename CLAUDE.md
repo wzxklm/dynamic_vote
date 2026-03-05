@@ -48,20 +48,61 @@
 
 ```
 /workspace/
-├── prisma/                    # Schema + seed + migrations
+├── prisma/
+│   ├── schema.prisma              # Prisma 数据模型定义
+│   └── seed.ts                    # 预设数据种子脚本
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx           # 首页：旭日图 + 投票入口
-│   │   ├── vote/page.tsx      # 投票页（多步表单）
-│   │   ├── stats/page.tsx     # 统计详情页
-│   │   ├── report/page.tsx    # AI 分析报告页
-│   │   └── api/               # vote, ip-lookup, stats, options, export, report
-│   ├── components/            # vote-form, sunburst-chart, ui (Shadcn)
-│   ├── lib/                   # db, ai, ip-lookup, rate-limit, queue, vote-service, stats, validators
-│   ├── data/presets.ts        # 预设选项数据
-│   └── types/index.ts         # 全局类型
-├── docker/                    # Dockerfile.prod + docker-compose.prod.yml
-└── .env.local                 # 环境变量
+│   │   ├── api/
+│   │   │   ├── export/route.ts    # 数据导出 API（Markdown 格式）
+│   │   │   ├── ip-lookup/route.ts # IP 地理信息查询 API
+│   │   │   ├── options/route.ts   # 动态选项列表 API
+│   │   │   ├── report/route.ts    # AI 分析报告 API
+│   │   │   ├── stats/route.ts     # 统计聚合数据 API
+│   │   │   └── vote/route.ts      # 投票提交 API
+│   │   ├── report/page.tsx        # AI 分析报告页
+│   │   ├── stats/page.tsx         # 统计详情页
+│   │   ├── vote/page.tsx          # 投票页（多步表单）
+│   │   ├── globals.css            # 全局样式
+│   │   ├── layout.tsx             # 根布局（主题、Toast）
+│   │   └── page.tsx               # 首页：旭日图 + 投票入口
+│   ├── components/
+│   │   ├── ui/                    # Shadcn/ui 组件（badge, button, card, input, label, select, skeleton, tabs, toast, toaster）
+│   │   ├── vote-form/
+│   │   │   ├── step-asn.tsx       # 步骤：ASN 选择
+│   │   │   ├── step-blocked.tsx   # 步骤：封锁状态选择
+│   │   │   ├── step-confirm.tsx   # 步骤：确认提交
+│   │   │   ├── step-count.tsx     # 步骤：机器数量
+│   │   │   ├── step-key-config.tsx # 步骤：密钥配置选择
+│   │   │   ├── step-org.tsx       # 步骤：机构/VPS 提供商选择
+│   │   │   ├── step-protocol.tsx  # 步骤：协议选择
+│   │   │   ├── step-usage.tsx     # 步骤：用途选择（代理/网站）
+│   │   │   └── vote-wizard.tsx    # 投票向导主组件（步骤控制）
+│   │   ├── sunburst-chart.tsx     # ECharts 旭日图组件
+│   │   ├── theme-provider.tsx     # 主题 Provider（dark/light）
+│   │   └── theme-toggle.tsx       # 主题切换按钮
+│   ├── data/
+│   │   └── presets.ts             # 预设选项数据（机构、ASN、协议等）
+│   ├── hooks/
+│   │   └── use-toast.ts           # Toast 通知 Hook
+│   ├── lib/
+│   │   ├── ai.ts                  # OpenAI SDK 客户端（AI 归类 + 报告生成）
+│   │   ├── db.ts                  # Prisma 客户端单例
+│   │   ├── fingerprint.ts         # FingerprintJS 浏览器指纹
+│   │   ├── ip-lookup.ts           # IP 查询服务（ip-api + ipinfo 备用）
+│   │   ├── queue.ts               # BullMQ 队列（AI 匹配异步处理）
+│   │   ├── rate-limit.ts          # 滑动窗口限流（Redis）
+│   │   ├── stats.ts               # 统计聚合逻辑（旭日图数据）
+│   │   ├── utils.ts               # 通用工具函数（cn 等）
+│   │   ├── validators.ts          # Zod Schema（前后端共用）
+│   │   ├── vote-service.ts        # 投票核心业务逻辑
+│   │   └── vote-store.ts          # Zustand 投票表单状态管理
+│   └── types/
+│       └── index.ts               # 全局 TypeScript 类型定义
+├── docker/
+│   ├── docker-compose.prod.yml    # 生产环境编排
+│   └── Dockerfile.prod            # 生产容器镜像
+└── .env.local                     # 环境变量
 ```
 
 ## 开发约定

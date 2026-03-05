@@ -80,22 +80,9 @@ export const presetOptions: PresetOption[] = [
   { layer: "protocol", value: "Mieru", parentKey: "" },
 
   // ── keyConfig（关键配置）─────────────────────
-  // TLS 伪装
-  { layer: "keyConfig", value: "TLS 指纹伪装为 Chrome", parentKey: "" },
-  { layer: "keyConfig", value: "TLS 指纹伪装为 Firefox", parentKey: "" },
-  // CDN 中转
-  { layer: "keyConfig", value: "使用 Cloudflare CDN 中转", parentKey: "" },
-  { layer: "keyConfig", value: "使用其他 CDN 中转", parentKey: "" },
-  // 端口策略
-  { layer: "keyConfig", value: "使用 443 端口", parentKey: "" },
-  { layer: "keyConfig", value: "使用非常规端口", parentKey: "" },
-  { layer: "keyConfig", value: "端口跳跃（Port Hopping）", parentKey: "" },
-  // 连接方式
-  { layer: "keyConfig", value: "直连无伪装", parentKey: "" },
-  { layer: "keyConfig", value: "开启 Mux 多路复用", parentKey: "" },
-  // 使用人数
-  { layer: "keyConfig", value: "独享（仅自己）", parentKey: "" },
-  { layer: "keyConfig", value: "少量共享（2-5人）", parentKey: "" },
-  { layer: "keyConfig", value: "多人共享（6-20人）", parentKey: "" },
-  { layer: "keyConfig", value: "机场节点（>20人）", parentKey: "" },
+  { layer: "keyConfig", value: "CDN 大厂域名中转", parentKey: "" },
+  { layer: "keyConfig", value: "使用高位端口", parentKey: "" },
+  { layer: "keyConfig", value: "独享", parentKey: "" },
+  { layer: "keyConfig", value: "多人使用（机场）", parentKey: "" },
+  { layer: "keyConfig", value: "开启 TLS 指纹", parentKey: "" },
 ];
