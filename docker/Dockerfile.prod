@@ -10,6 +10,7 @@ COPY . .
 RUN mkdir -p public
 RUN npx prisma generate
 RUN npm run build
+RUN npx esbuild prisma/seed.ts --bundle --platform=node --outfile=prisma/seed.js --external:@prisma/client
 
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -28,12 +29,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-
-# Seed 依赖：tsx + 预设数据
-COPY --from=builder /app/src/data ./src/data
-COPY --from=builder /app/node_modules/tsx ./node_modules/tsx
-COPY --from=builder /app/node_modules/esbuild ./node_modules/esbuild
-COPY --from=builder /app/node_modules/@esbuild ./node_modules/@esbuild
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder /app/package.json ./package.json
 
 RUN chown -R nextjs:nodejs /app
@@ -42,4 +38,4 @@ USER nextjs
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
