@@ -29,9 +29,14 @@ export async function GET(request: NextRequest) {
 
   // Check Redis cache
   const cacheKey = parentKey ? `options:${layer}:${parentKey}` : `options:${layer}`;
-  const cached = await redis.get(cacheKey);
-  if (cached) {
-    return NextResponse.json(JSON.parse(cached));
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return NextResponse.json(parsed);
+    }
+  } catch {
+    // Redis unavailable or malformed cache — fall through to database query
   }
 
   // Query database
@@ -52,8 +57,12 @@ export async function GET(request: NextRequest) {
 
   const result = { layer, options };
 
-  // Cache result
-  await redis.set(cacheKey, JSON.stringify(result), "EX", CACHE_TTL);
+  // Cache result (fire and forget)
+  try {
+    await redis.set(cacheKey, JSON.stringify(result), "EX", CACHE_TTL);
+  } catch {
+    // Redis unavailable — proceed without caching
+  }
 
   return NextResponse.json(result);
 }

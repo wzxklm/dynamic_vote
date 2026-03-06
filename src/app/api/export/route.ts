@@ -11,6 +11,7 @@ export async function GET() {
       status: 200,
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="vps-ip-stats.md"',
       },
     });
   } catch (error) {

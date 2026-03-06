@@ -67,6 +67,8 @@ export const useVoteStore = create<VoteFormState & VoteFormActions>((set) => ({
             ipLookupAsn: s.ipLookupAsn,
             ipLookupCountry: s.ipLookupCountry,
             ipLookupCity: s.ipLookupCity,
+            customOrg: s.customOrg,
+            customAsn: s.customAsn,
           }
         : initialState
     ),

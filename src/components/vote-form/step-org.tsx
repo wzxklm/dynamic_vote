@@ -28,12 +28,19 @@ export function StepOrg() {
   const [options, setOptions] = useState<OptionItem[]>([]);
   const [customInput, setCustomInput] = useState("");
   const [showCustom, setShowCustom] = useState(false);
+  const [fetchError, setFetchError] = useState("");
 
   useEffect(() => {
     fetch("/api/options?layer=org")
-      .then((r) => r.json())
-      .then((d) => setOptions(d.options || []))
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error("加载选项失败");
+        return r.json();
+      })
+      .then((d) => {
+        setOptions(d.options || []);
+        setFetchError("");
+      })
+      .catch(() => setFetchError("加载选项失败，请重试"));
   }, []);
 
   const doLookup = async () => {
@@ -130,6 +137,9 @@ export function StepOrg() {
       </TabsContent>
 
       <TabsContent value="list" className="space-y-2 mt-3">
+        {fetchError && (
+          <div className="text-sm text-destructive mb-2">{fetchError}</div>
+        )}
         <div className="max-h-64 overflow-y-auto space-y-1">
           {options.map((opt) => (
             <Button

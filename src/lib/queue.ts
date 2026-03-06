@@ -308,8 +308,12 @@ async function clusterUnpromotedOptions(): Promise<void> {
         }
 
         // Update votes referencing member.value → canonical.value
+        const whereClause: Record<string, unknown> = { [layerField]: member.value };
+        if (layer === "asn" && parentKey) {
+          whereClause.org = parentKey;
+        }
         await prisma.vote.updateMany({
-          where: { [layerField]: member.value },
+          where: whereClause,
           data: { [layerField]: canonical.value },
         });
 
@@ -347,12 +351,24 @@ export async function addToMatchQueue(data: MatchJobData): Promise<boolean> {
   const queue = queues[data.layer];
   if (!queue) return false;
 
-  await queue.add("match", data, {
-    attempts: 3,
-    backoff: { type: "exponential", delay: 2000 },
-    removeOnComplete: 100,
-    removeOnFail: 1000,
-  });
+  try {
+    await queue.add("match", data, {
+      jobId: `${data.voteId}-${data.layer}`,
+      attempts: 3,
+      backoff: { type: "exponential", delay: 2000 },
+      removeOnComplete: 100,
+      removeOnFail: 1000,
+    });
+  } catch (err: unknown) {
+    // BullMQ rejects duplicate job IDs — this is expected during orphan recovery
+    if (
+      err instanceof Error &&
+      err.message.includes("duplicated")
+    ) {
+      return true;
+    }
+    throw err;
+  }
 
   return true;
 }

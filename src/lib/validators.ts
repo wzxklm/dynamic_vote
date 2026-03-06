@@ -4,7 +4,7 @@ export const voteSchema = z
   .object({
     isBlocked: z.boolean(),
     org: z.string().min(1).max(100),
-    asn: z.string().regex(/^AS\d+$/, "ASN 格式需为 AS + 数字"),
+    asn: z.string().regex(/^AS\d+$/i, "ASN 格式需为 AS + 数字").transform((val) => val.toUpperCase()),
     usage: z.enum(["proxy", "website"]),
     protocol: z.string().min(1).max(100).nullable(),
     keyConfig: z.string().min(1).max(100).nullable(),

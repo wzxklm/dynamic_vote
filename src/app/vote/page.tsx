@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { VoteWizard } from "@/components/vote-form/vote-wizard";
-import { Toaster } from "@/components/ui/toaster";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +16,6 @@ export default function VotePage() {
       </div>
       <h1 className="text-2xl font-bold mb-6">提交投票</h1>
       <VoteWizard />
-      <Toaster />
     </main>
   );
 }

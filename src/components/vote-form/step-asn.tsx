@@ -17,6 +17,7 @@ export function StepAsn() {
   const [options, setOptions] = useState<OptionItem[]>([]);
   const [customInput, setCustomInput] = useState("");
   const [showCustom, setShowCustom] = useState(false);
+  const [fetchError, setFetchError] = useState("");
 
   // If ASN was already set by IP lookup, auto-advance
   useEffect(() => {
@@ -28,9 +29,15 @@ export function StepAsn() {
   useEffect(() => {
     if (!store.org) return;
     fetch(`/api/options?layer=asn&parentKey=${encodeURIComponent(store.org)}`)
-      .then((r) => r.json())
-      .then((d) => setOptions(d.options || []))
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error("加载选项失败");
+        return r.json();
+      })
+      .then((d) => {
+        setOptions(d.options || []);
+        setFetchError("");
+      })
+      .catch(() => setFetchError("加载选项失败，请重试"));
   }, [store.org]);
 
   const select = (value: string, isCustom = false) => {
@@ -78,6 +85,9 @@ export function StepAsn() {
       <p className="text-sm text-muted-foreground mb-2">
         选择 <strong>{store.org}</strong> 下的 ASN：
       </p>
+      {fetchError && (
+        <div className="text-sm text-destructive mb-2">{fetchError}</div>
+      )}
       <div className="max-h-64 overflow-y-auto space-y-1">
         {options.map((opt) => (
           <Button

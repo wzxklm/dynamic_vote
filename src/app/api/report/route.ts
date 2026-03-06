@@ -10,27 +10,35 @@ import { checkReportRateLimit } from "@/lib/rate-limit";
  * GET /api/report — Retrieve cached AI report
  */
 export async function GET() {
-  const report = await prisma.report.findFirst({
-    orderBy: { generatedAt: "desc" },
-  });
+  try {
+    const report = await prisma.report.findFirst({
+      orderBy: { generatedAt: "desc" },
+    });
 
-  if (!report) {
-    return NextResponse.json({ error: "尚未生成过报告" }, { status: 404 });
+    if (!report) {
+      return NextResponse.json({ error: "尚未生成过报告" }, { status: 404 });
+    }
+
+    // Get current total votes for expiry detection
+    const result = await prisma.vote.aggregate({
+      where: { resolved: true },
+      _sum: { count: true },
+    });
+    const currentTotalVotes = result._sum.count || 0;
+
+    return NextResponse.json({
+      report: report.content,
+      generatedAt: report.generatedAt.toISOString(),
+      totalVotesAtGeneration: report.totalVotesAtGeneration,
+      currentTotalVotes,
+    });
+  } catch (error) {
+    console.error("Report retrieval failed:", error);
+    return NextResponse.json(
+      { error: "服务器内部错误" },
+      { status: 500 }
+    );
   }
-
-  // Get current total votes for expiry detection
-  const result = await prisma.vote.aggregate({
-    where: { resolved: true },
-    _sum: { count: true },
-  });
-  const currentTotalVotes = result._sum.count || 0;
-
-  return NextResponse.json({
-    report: report.content,
-    generatedAt: report.generatedAt.toISOString(),
-    totalVotesAtGeneration: report.totalVotesAtGeneration,
-    currentTotalVotes,
-  });
 }
 
 /**
@@ -51,12 +59,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Get export data
-  const stats = await getStats();
-  const markdownTable = exportToMarkdown(stats.tree);
-
   // Generate report via AI
   try {
+    // Get export data
+    const stats = await getStats();
+    const markdownTable = exportToMarkdown(stats.tree);
+
     const reportContent = await generateReport(markdownTable);
 
     // Get total votes snapshot
@@ -66,14 +74,16 @@ export async function POST(request: NextRequest) {
     });
     const totalVotesAtGeneration = totalResult._sum.count || 0;
 
-    // Delete old reports and save new one
-    await prisma.report.deleteMany();
-    const report = await prisma.report.create({
-      data: {
-        content: reportContent,
-        totalVotesAtGeneration,
-      },
-    });
+    // Atomically delete old reports and save new one
+    const [, report] = await prisma.$transaction([
+      prisma.report.deleteMany(),
+      prisma.report.create({
+        data: {
+          content: reportContent,
+          totalVotesAtGeneration,
+        },
+      }),
+    ]);
 
     return NextResponse.json({
       report: report.content,

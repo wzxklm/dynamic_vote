@@ -161,6 +161,7 @@ export default function StatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -204,7 +205,7 @@ export default function StatsPage() {
 
   const handleCopyMarkdown = useCallback(async () => {
     try {
-      setExporting(true);
+      setCopying(true);
       const res = await fetch("/api/export");
       if (!res.ok) throw new Error("导出失败");
       const markdown = await res.text();
@@ -213,7 +214,7 @@ export default function StatsPage() {
     } catch (e) {
       alert((e as Error).message);
     } finally {
-      setExporting(false);
+      setCopying(false);
     }
   }, []);
 
@@ -235,7 +236,7 @@ export default function StatsPage() {
           <Button
             variant="outline"
             onClick={handleCopyMarkdown}
-            disabled={exporting || !stats}
+            disabled={copying || !stats}
           >
             复制 Markdown
           </Button>

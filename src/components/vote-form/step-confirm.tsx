@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useVoteStore } from "@/lib/vote-store";
 import { getFingerprint } from "@/lib/fingerprint";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export function StepConfirm() {
   const store = useVoteStore();
+  const router = useRouter();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{
@@ -101,7 +103,7 @@ export function StepConfirm() {
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => (window.location.href = "/")}
+            onClick={() => router.push("/")}
           >
             查看统计
           </Button>

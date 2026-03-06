@@ -48,8 +48,10 @@ async function aggregateStats(): Promise<CachedStats> {
 
   for (const row of proxyRows) {
     const count = row._sum.count || 0;
+    // Skip rows with null protocol/keyConfig — indicates corrupt data for proxy votes
+    if (row.protocol == null || row.keyConfig == null) continue;
     total += count;
-    ensurePath(blockedMap, row.isBlocked, row.org, row.asn, row.usage, row.protocol!, row.keyConfig!, count);
+    ensurePath(blockedMap, row.isBlocked, row.org, row.asn, row.usage, row.protocol, row.keyConfig, count);
   }
 
   // For website rows, we store them in the same structure but with no protocol/keyConfig children

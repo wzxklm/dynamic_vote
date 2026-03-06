@@ -78,32 +78,34 @@ export default function Home() {
 
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-6xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-bold">VPS IP 封锁投票统计</h1>
-            <ThemeToggle />
-          </div>
-          {stats && (
-            <p className="text-sm text-muted-foreground mt-1">
-              共 {stats.total} 台 · 数据更新于 {formatTimeAgo(stats.updatedAt)}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
-          <Link href="/vote">
-            <Button>参与投票</Button>
-          </Link>
-          <Link href="/stats">
-            <Button variant="outline">详细统计</Button>
-          </Link>
-          <Link href="/report">
-            <Button variant="outline">AI 报告</Button>
-          </Link>
-        </div>
-      </div>
-
       {loading && <HomeSkeleton />}
+
+      {!loading && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold">VPS IP 封锁投票统计</h1>
+              <ThemeToggle />
+            </div>
+            {stats && (
+              <p className="text-sm text-muted-foreground mt-1">
+                共 {stats.total} 台 · 数据更新于 {formatTimeAgo(stats.updatedAt)}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
+            <Link href="/vote">
+              <Button>参与投票</Button>
+            </Link>
+            <Link href="/stats">
+              <Button variant="outline">详细统计</Button>
+            </Link>
+            <Link href="/report">
+              <Button variant="outline">AI 报告</Button>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center justify-center h-[400px] sm:h-[600px] text-destructive">

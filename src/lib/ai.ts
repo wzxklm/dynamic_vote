@@ -55,6 +55,8 @@ export async function matchOption(
   candidates: MatchCandidate[],
   userInput: string
 ): Promise<MatchResult> {
+  if (candidates.length === 0) return { matched: false, option_id: null };
+
   const optionsJson = JSON.stringify(
     candidates.map((c) => ({ id: c.id, value: c.value }))
   );
@@ -87,6 +89,9 @@ ${optionsJson}
     if (typeof parsed.matched !== "boolean") {
       throw new Error("Invalid AI response format");
     }
+    if (parsed.matched && !parsed.option_id) {
+      return { matched: false, option_id: null };
+    }
     return parsed;
   };
 
@@ -94,7 +99,7 @@ ${optionsJson}
   // Network/5xx → exponential backoff 3 times (2s, 4s, 8s)
   const delays = [2000, 4000, 8000];
 
-  for (let attempt = 0; attempt <= 3; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await makeRequest();
     } catch (error) {
@@ -107,7 +112,7 @@ ${optionsJson}
         continue;
       }
 
-      if (attempt >= 3) throw error;
+      if (attempt >= 2) throw error;
 
       // Network/5xx: exponential backoff
       const delay = delays[Math.min(attempt, delays.length - 1)];
@@ -189,7 +194,7 @@ export async function generateReport(markdownTable: string): Promise<string> {
       return await makeRequest();
     } catch (error) {
       if (attempt >= 2) {
-        if (error instanceof DOMException && error.name === "AbortError") {
+        if (error instanceof Error && error.name === "AbortError") {
           throw new Error("TIMEOUT");
         }
         throw error;
@@ -280,7 +285,7 @@ ${optionsJson}
 
   const delays = [2000, 4000, 8000];
 
-  for (let attempt = 0; attempt <= 3; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await makeRequest();
     } catch (error) {
@@ -292,7 +297,7 @@ ${optionsJson}
         continue;
       }
 
-      if (attempt >= 3) throw error;
+      if (attempt >= 2) throw error;
 
       const delay = delays[Math.min(attempt, delays.length - 1)];
       await new Promise((resolve) => setTimeout(resolve, delay));

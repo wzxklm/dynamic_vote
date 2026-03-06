@@ -77,6 +77,16 @@ export default function ReportPage() {
       }
       const data = await res.json();
       setReport({ ...data, currentTotalVotes: data.totalVotesAtGeneration });
+      // Fetch GET to get the actual currentTotalVotes (POST doesn't return it)
+      try {
+        const getRes = await fetch("/api/report");
+        if (getRes.ok) {
+          const getData = await getRes.json();
+          setReport(getData);
+        }
+      } catch {
+        // Ignore - we already have the report from POST
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {

@@ -69,7 +69,7 @@ async function lookupFallback(ip: string): Promise<IpLookupResult> {
   const token = process.env.IP_API_FALLBACK_TOKEN;
 
   const url = token
-    ? `${baseUrl}/${ip}?token=${token}`
+    ? `${baseUrl}/${ip}/json?token=${token}`
     : `${baseUrl}/${ip}/json`;
 
   const res = await fetch(url, {

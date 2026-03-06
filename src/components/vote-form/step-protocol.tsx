@@ -17,12 +17,19 @@ export function StepProtocol() {
   const [options, setOptions] = useState<OptionItem[]>([]);
   const [customInput, setCustomInput] = useState("");
   const [showCustom, setShowCustom] = useState(false);
+  const [fetchError, setFetchError] = useState("");
 
   useEffect(() => {
     fetch("/api/options?layer=protocol")
-      .then((r) => r.json())
-      .then((d) => setOptions(d.options || []))
-      .catch(() => {});
+      .then((r) => {
+        if (!r.ok) throw new Error("加载选项失败");
+        return r.json();
+      })
+      .then((d) => {
+        setOptions(d.options || []);
+        setFetchError("");
+      })
+      .catch(() => setFetchError("加载选项失败，请重试"));
   }, []);
 
   const select = (value: string, isCustom = false) => {
@@ -39,6 +46,9 @@ export function StepProtocol() {
   return (
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground mb-2">选择代理协议：</p>
+      {fetchError && (
+        <div className="text-sm text-destructive mb-2">{fetchError}</div>
+      )}
       <div className="max-h-64 overflow-y-auto space-y-1">
         {options.map((opt) => (
           <Button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useTheme } from "next-themes";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
@@ -21,12 +21,13 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
-  const handleClick = useCallback(
-    (params: { data?: SunburstNode; treePathInfo?: Array<{ name: string }> }) => {
-      // ECharts sunburst supports drill-down natively via click
-    },
-    []
-  );
+  useEffect(() => {
+    const handleResize = () => {
+      chartRef.current?.getEchartsInstance()?.resize();
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const option = useMemo(
     () => ({
@@ -123,8 +124,6 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
     [data, total, isDark]
   );
 
-  const onEvents = useMemo(() => ({ click: handleClick }), [handleClick]);
-
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-[600px] sm:h-[800px] text-muted-foreground">
@@ -139,7 +138,6 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
       echarts={echarts}
       option={option}
       style={{ height: "min(900px, 85vh)", width: "100%" }}
-      onEvents={onEvents}
       notMerge={true}
     />
   );

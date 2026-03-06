@@ -23,7 +23,7 @@ export interface SunburstNode {
 export interface StatsResponse {
   total: number;
   updatedAt: string;
-  tree: SunburstNode[];
+  tree: SunburstNode;
 }
 
 export interface OptionItem {

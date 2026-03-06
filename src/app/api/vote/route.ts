@@ -50,6 +50,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Get client IP
+  // Limitation: falls back to "unknown" when behind proxies that don't set
+  // x-forwarded-for / x-real-ip headers, which means rate-limiting by IP
+  // won't work correctly in that scenario.
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip") ||
@@ -74,16 +77,15 @@ export async function POST(request: NextRequest) {
   }
 
   // Submit vote
-  const result = await submitVote(data);
+  try {
+    const result = await submitVote(data);
 
-  // Queue AI matching for custom fields (with retry)
-  if (result.customFields.length > 0) {
-    let allQueued = true;
+    // Queue AI matching for custom fields (single attempt; orphan recovery handles retries)
+    if (result.customFields.length > 0) {
+      let allQueued = true;
 
-    for (const field of result.customFields) {
-      let queued = false;
-      // Retry up to 3 times with 1s interval
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (const field of result.customFields) {
+        let queued = false;
         try {
           queued = await addToMatchQueue({
             voteId: result.id,
@@ -92,28 +94,31 @@ export async function POST(request: NextRequest) {
             parentKey: field.parentKey,
             fingerprint: data.fingerprint,
           });
-          if (queued) break;
         } catch {
-          if (attempt < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
+          // Queue unavailable — orphan recovery job will retry asynchronously
         }
+
+        if (!queued) allQueued = false;
       }
 
-      if (!queued) allQueued = false;
+      // If any queue failed, mark the vote so orphan recovery can pick it up
+      if (!allQueued) {
+        await prisma.vote.update({
+          where: { id: result.id },
+          data: { queueFailed: true },
+        });
+      }
     }
 
-    // If any queue failed, mark the vote
-    if (!allQueued) {
-      await prisma.vote.update({
-        where: { id: result.id },
-        data: { queueFailed: true },
-      });
-    }
+    return NextResponse.json(
+      { id: result.id, resolved: result.resolved },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("Vote submission failed:", error);
+    return NextResponse.json(
+      { error: "服务器内部错误" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(
-    { id: result.id, resolved: result.resolved },
-    { status: 201 }
-  );
 }

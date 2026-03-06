@@ -45,21 +45,42 @@ export function getFieldsToCheck(data: {
 }
 
 /**
- * Check if a value is a known option (isPreset=true or promoted=true)
+ * Batch-check which fields are known options (isPreset=true or promoted=true).
+ * Returns a Set of indices (into the input array) that are known.
+ * Eliminates N+1 queries by fetching all fields in a single OR query.
  */
-async function isKnownOption(
-  layer: string,
-  value: string,
-  parentKey: string
-): Promise<boolean> {
-  const option = await prisma.dynamicOption.findUnique({
-    where: {
-      layer_value_parentKey: { layer, value, parentKey },
-    },
+async function checkKnownOptions(
+  fields: { layer: string; value: string; parentKey: string }[]
+): Promise<Set<number>> {
+  if (fields.length === 0) return new Set();
+
+  const orClauses = fields.map((f) => ({
+    layer: f.layer,
+    value: f.value,
+    parentKey: f.parentKey,
+  }));
+
+  const foundOptions = await prisma.dynamicOption.findMany({
+    where: { OR: orClauses },
+    select: { layer: true, value: true, parentKey: true, isPreset: true, promoted: true },
   });
 
-  if (!option) return false;
-  return option.isPreset || option.promoted;
+  const knownSet = new Set<string>();
+  for (const opt of foundOptions) {
+    if (opt.isPreset || opt.promoted) {
+      knownSet.add(`${opt.layer}::${opt.value}::${opt.parentKey}`);
+    }
+  }
+
+  const result = new Set<number>();
+  for (let i = 0; i < fields.length; i++) {
+    const key = `${fields[i].layer}::${fields[i].value}::${fields[i].parentKey}`;
+    if (knownSet.has(key)) {
+      result.add(i);
+    }
+  }
+
+  return result;
 }
 
 // --- Vote submission ---
@@ -87,12 +108,12 @@ export async function submitVote(data: VoteFormData): Promise<VoteResult> {
   });
 
   const fieldsToCheck = getFieldsToCheck(data);
+  const knownIndices = await checkKnownOptions(fieldsToCheck);
   const customFields: { layer: string; value: string; parentKey: string }[] = [];
 
-  for (const field of fieldsToCheck) {
-    const isKnown = await isKnownOption(field.layer, field.value, field.parentKey);
-    if (!isKnown) {
-      customFields.push(field);
+  for (let i = 0; i < fieldsToCheck.length; i++) {
+    if (!knownIndices.has(i)) {
+      customFields.push(fieldsToCheck[i]);
     }
   }
 
@@ -149,17 +170,17 @@ export async function deduplicateCount(
  * If promoted, clear cache and try to resolve related votes.
  */
 export async function promoteOptionIfNeeded(optionId: string): Promise<void> {
+  // Atomic promote: avoids TOCTOU race by combining read + condition + update
+  const { count } = await prisma.dynamicOption.updateMany({
+    where: { id: optionId, promoted: false, submitCount: { gte: 3 } },
+    data: { promoted: true },
+  });
+  if (count === 0) return; // already promoted or not ready
+
   const option = await prisma.dynamicOption.findUnique({
     where: { id: optionId },
   });
-
-  if (!option || option.promoted || option.submitCount < 3) return;
-
-  // Promote the option
-  await prisma.dynamicOption.update({
-    where: { id: optionId },
-    data: { promoted: true },
-  });
+  if (!option) return;
 
   // Clear option cache for this layer
   await clearOptionCache(option.layer, option.parentKey);
@@ -170,6 +191,11 @@ export async function promoteOptionIfNeeded(optionId: string): Promise<void> {
     [layerField]: option.value,
     resolved: false,
   };
+
+  // Bug 8: For ASN layer, also filter by org to avoid cross-org matches
+  if (option.layer === "asn" && option.parentKey) {
+    whereClause.org = option.parentKey;
+  }
 
   const affectedVotes = await prisma.vote.findMany({
     where: whereClause,
@@ -200,10 +226,8 @@ export async function tryResolveVote(voteId: string): Promise<boolean> {
     keyConfig: vote.keyConfig,
   });
 
-  for (const field of fieldsToCheck) {
-    const isKnown = await isKnownOption(field.layer, field.value, field.parentKey);
-    if (!isKnown) return false;
-  }
+  const knownIndices = await checkKnownOptions(fieldsToCheck);
+  if (knownIndices.size !== fieldsToCheck.length) return false;
 
   await prisma.vote.update({
     where: { id: voteId },

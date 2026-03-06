@@ -14,7 +14,10 @@ export async function getFingerprint(): Promise<string> {
       const result = await fp.get();
       cachedVisitorId = result.visitorId;
       return result.visitorId;
-    })();
+    })().catch((err) => {
+      fpPromise = null;
+      throw err;
+    });
   }
 
   return fpPromise;
