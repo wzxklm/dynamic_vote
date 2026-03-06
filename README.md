@@ -151,6 +151,45 @@ npx prisma db seed
 npm run dev
 ```
 
+### 二次开发后更新生产服务
+
+代码修改后需要推送到仓库，然后在 VPS 上拉取并更新。根据改动内容决定操作范围：
+
+**仅修改应用代码**（`src/` 下的文件） — 只需重建 app 容器：
+
+```bash
+cd docker
+docker compose up -d --build app
+```
+
+**修改了数据库模型**（`prisma/schema.prisma`） — 重建 app 容器即可，migrate 会自动执行：
+
+```bash
+cd docker
+docker compose up -d --build app
+# app 启动时自动运行 prisma migrate deploy，无需手动操作
+```
+
+**修改了预设选项**（`src/data/presets.ts`） — 重建 app 后重新跑 seed：
+
+```bash
+cd docker
+docker compose up -d --build app
+docker compose exec app node prisma/seed.js
+# seed 使用 upsert，不会影响已有数据和用户动态创建的选项
+```
+
+**修改了队列 job 结构**（`src/lib/queue.ts` 中的 job 数据格式变化） — 建议清理 Redis 旧任务：
+
+```bash
+cd docker
+docker compose up -d --build app
+docker compose exec redis redis-cli FLUSHDB
+# ⚠️ 会清除所有缓存和队列数据，限流计数也会重置
+```
+
+> 无论哪种情况，都**不需要**重建 PostgreSQL 和 Redis 容器本身，只需重建 app 容器。数据库和缓存的数据存储在 Docker volume 中，不受 app 重建影响。
+
 ## 项目文档
 
 详细的需求、技术方案和接口文档在 [docs/](docs/) 目录下。
