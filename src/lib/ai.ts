@@ -201,19 +201,104 @@ export async function generateReport(markdownTable: string): Promise<string> {
   throw new Error("AI report generation failed after all retries");
 }
 
-/**
- * Fallback: exact string matching (case-insensitive + trim)
- * Used when AI is unavailable for extended periods.
- */
-export function matchOptionFallback(
-  candidates: MatchCandidate[],
-  userInput: string
-): MatchResult {
-  const normalized = userInput.trim().toLowerCase();
-  const match = candidates.find(
-    (c) => c.value.trim().toLowerCase() === normalized
-  );
-  return match
-    ? { matched: true, option_id: match.id }
-    : { matched: false, option_id: null };
+// --- AI Option Clustering ---
+
+interface ClusterCandidate {
+  id: string;
+  value: string;
+  submitCount: number;
 }
+
+export interface ClusterResult {
+  clusters: Array<{
+    canonical_id: string;
+    member_ids: string[];
+  }>;
+}
+
+const CLUSTER_SYSTEM_PROMPT = `你是一个选项聚类系统。给定一组选项，识别语义等价的选项并分组。
+
+等价规则：
+- 多语言表述：日本 = JP = Japan
+- 缩写/简称：搬瓦工 = BWG = BandwagonHost
+- 俗称/别名：DMIT = 大妈IT
+- 大小写变体：vultr = Vultr = VULTR
+- 技术等价：Hysteria2 = hy2 = Hysteria 2
+
+判断标准：严格等价才算同组，含义相近但不同的选项不算同组。
+例如 "Shadowsocks" 和 "ShadowsocksR" 不等价。
+
+要求：
+- 只返回有 2 个及以上成员的组
+- 每组中 canonical_id 选 submitCount 最高的选项，submitCount 相同则选排在前面的
+- 不属于任何组的单独选项不要出现在结果中
+
+严格返回 JSON，不要解释，不要添加额外字段。`;
+
+/**
+ * Use AI to cluster semantically equivalent options.
+ * Returns groups of equivalent options with a canonical for each group.
+ * Retries with exponential backoff on failure.
+ */
+export async function clusterOptions(
+  layer: string,
+  candidates: ClusterCandidate[]
+): Promise<ClusterResult> {
+  const optionsJson = JSON.stringify(
+    candidates.map((c) => ({ id: c.id, value: c.value, submitCount: c.submitCount }))
+  );
+
+  const userPrompt = `层级：${layer}
+选项列表：
+${optionsJson}
+
+识别语义等价的选项并分组。返回 JSON：
+{"clusters": [{"canonical_id": "submitCount最高的选项id", "member_ids": ["该组所有成员的id，包括canonical"]}]}
+
+如果没有任何等价组，返回：{"clusters": []}`;
+
+  const makeRequest = async (): Promise<ClusterResult> => {
+    const response = await ai.chat.completions.create({
+      model: process.env.AI_MODEL_LIGHT || "gemini-flash-latest",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: CLUSTER_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) throw new Error("AI returned empty content");
+
+    const parsed = JSON.parse(content) as ClusterResult;
+    if (!Array.isArray(parsed.clusters)) {
+      throw new Error("Invalid AI cluster response format");
+    }
+    return parsed;
+  };
+
+  const delays = [2000, 4000, 8000];
+
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    try {
+      return await makeRequest();
+    } catch (error) {
+      const isJsonError =
+        error instanceof SyntaxError ||
+        (error instanceof Error && error.message === "Invalid AI cluster response format");
+
+      if (isJsonError && attempt === 0) {
+        continue;
+      }
+
+      if (attempt >= 3) throw error;
+
+      const delay = delays[Math.min(attempt, delays.length - 1)];
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error("AI cluster failed after all retries");
+}
+

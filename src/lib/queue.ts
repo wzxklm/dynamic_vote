@@ -1,8 +1,9 @@
 import { Queue, Worker } from "bullmq";
 import IORedis from "ioredis";
 import { prisma } from "./db";
-import { matchOption, matchOptionFallback } from "./ai";
+import { matchOption, clusterOptions } from "./ai";
 import {
+  clearOptionCache,
   deduplicateCount,
   promoteOptionIfNeeded,
   tryResolveVote,
@@ -52,24 +53,6 @@ function getQueues(): Record<string, Queue<MatchJobData>> {
   return queues;
 }
 
-// --- AI degradation tracking ---
-
-let aiFailSince: number | null = null;
-const AI_DEGRADE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
-
-function isAIDegraded(): boolean {
-  if (!aiFailSince) return false;
-  return Date.now() - aiFailSince >= AI_DEGRADE_THRESHOLD_MS;
-}
-
-function markAIFail() {
-  if (!aiFailSince) aiFailSince = Date.now();
-}
-
-function markAISuccess() {
-  aiFailSince = null;
-}
-
 // --- Worker processing logic ---
 
 async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
@@ -81,21 +64,9 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
     select: { id: true, value: true },
   });
 
-  let matchResult;
-
-  if (isAIDegraded()) {
-    // Fallback mode: exact string match
-    matchResult = matchOptionFallback(candidates, value);
-  } else {
-    try {
-      matchResult = await matchOption(layer, candidates, value);
-      markAISuccess();
-    } catch {
-      markAIFail();
-      // Use fallback for this job
-      matchResult = matchOptionFallback(candidates, value);
-    }
-  }
+  // Let errors propagate — BullMQ will retry (3 attempts, exponential backoff).
+  // If all retries fail, orphan recovery will re-queue in 2 hours.
+  const matchResult = await matchOption(layer, candidates, value);
 
   // Determine the layer field mapping for Vote table
   const layerField = layer as "org" | "asn" | "protocol" | "keyConfig";
@@ -159,9 +130,13 @@ function initWorkers(): Record<string, Worker<MatchJobData>> {
     workers[layer] = new Worker<MatchJobData>(
       `match-${layer}`,
       async (job) => {
-        // Handle orphan recovery jobs on the org queue
+        // Handle scheduled jobs on the org queue
         if (job.name === "orphan-recovery") {
           await recoverOrphanVotes();
+          return;
+        }
+        if (job.name === "option-clustering") {
+          await clusterUnpromotedOptions();
           return;
         }
         await processMatchJob(job);
@@ -210,9 +185,10 @@ async function recoverOrphanVotes(): Promise<void> {
         },
       });
 
-      const isKnown = option && (option.isPreset || option.promoted);
-      if (!isKnown) {
-        // Re-queue this field
+      // Only re-queue if no DynamicOption exists at all,
+      // meaning the original queue job was lost (Redis restart, worker crash, etc.)
+      // If option exists (even unpromoted), AI already processed it — don't re-queue.
+      if (!option) {
         await addToMatchQueue({
           voteId: vote.id,
           layer: field.layer,
@@ -247,6 +223,117 @@ function getVoteFieldsToCheck(vote: {
   }
 
   return fields;
+}
+
+// --- Option clustering (repeatable job) ---
+
+async function clusterUnpromotedOptions(): Promise<void> {
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+  // Get all unpromoted, non-preset options grouped by layer + parentKey
+  const options = await prisma.dynamicOption.findMany({
+    where: {
+      promoted: false,
+      isPreset: false,
+      createdAt: { lt: thirtyMinutesAgo },
+    },
+    select: { id: true, layer: true, parentKey: true, value: true, submitCount: true },
+  });
+
+  type OptionItem = typeof options[number];
+
+  // Group by layer + parentKey
+  const groups: Record<string, OptionItem[]> = {};
+  for (const opt of options) {
+    const key = `${opt.layer}::${opt.parentKey}`;
+    if (groups[key]) {
+      groups[key].push(opt);
+    } else {
+      groups[key] = [opt];
+    }
+  }
+
+  for (const group of Object.values(groups)) {
+    if (group.length < 2) continue;
+
+    const { layer, parentKey } = group[0];
+
+    let result;
+    try {
+      result = await clusterOptions(layer, group);
+    } catch (err) {
+      console.error(`[Cluster] AI clustering failed for ${layer}/${parentKey}:`, err);
+      continue; // Skip this group, retry next cycle
+    }
+
+    for (const cluster of result.clusters) {
+      if (cluster.member_ids.length < 2) continue;
+
+      // Validate all IDs exist in this group
+      const groupIds = new Set(group.map((o: OptionItem) => o.id));
+      const validMembers = cluster.member_ids.filter((id: string) => groupIds.has(id));
+      if (validMembers.length < 2) continue;
+      if (!groupIds.has(cluster.canonical_id)) continue;
+
+      const canonical = group.find((o: OptionItem) => o.id === cluster.canonical_id)!;
+      const others = validMembers.filter((id: string) => id !== cluster.canonical_id);
+
+      const layerField = layer as "org" | "asn" | "protocol" | "keyConfig";
+
+      for (const memberId of others) {
+        const member = group.find((o: OptionItem) => o.id === memberId)!;
+
+        // Migrate OptionContributors to canonical (skip duplicates via P2002)
+        const contributors = await prisma.optionContributor.findMany({
+          where: { optionId: memberId },
+        });
+
+        for (const contrib of contributors) {
+          try {
+            await prisma.optionContributor.create({
+              data: { optionId: canonical.id, fingerprint: contrib.fingerprint },
+            });
+          } catch (error: unknown) {
+            // P2002 = already contributed to canonical, skip
+            if (
+              error &&
+              typeof error === "object" &&
+              "code" in error &&
+              (error as { code: string }).code === "P2002"
+            ) {
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        // Update votes referencing member.value → canonical.value
+        await prisma.vote.updateMany({
+          where: { [layerField]: member.value },
+          data: { [layerField]: canonical.value },
+        });
+
+        // Delete member's contributors and the member option itself
+        await prisma.optionContributor.deleteMany({ where: { optionId: memberId } });
+        await prisma.dynamicOption.delete({ where: { id: memberId } });
+      }
+
+      // Recalculate canonical's submitCount from actual contributors
+      const actualCount = await prisma.optionContributor.count({
+        where: { optionId: canonical.id },
+      });
+      await prisma.dynamicOption.update({
+        where: { id: canonical.id },
+        data: { submitCount: actualCount },
+      });
+
+      // Check if canonical can now be promoted
+      await promoteOptionIfNeeded(canonical.id);
+
+      // Clear cache for this layer/parentKey
+      await clearOptionCache(layer, parentKey);
+    }
+  }
 }
 
 // --- Public API ---
@@ -284,13 +371,28 @@ export function initQueueSystem(): void {
       "orphan-recovery",
       { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" },
       {
-        repeat: { pattern: "*/5 * * * *" }, // every 5 minutes
+        repeat: { pattern: "0 */2 * * *" }, // every 2 hours
         removeOnComplete: 10,
         removeOnFail: 10,
       }
     )
     .catch((err) => {
       console.error("[Queue] Failed to register orphan recovery:", err);
+    });
+
+  // Register option clustering repeatable job on the org queue
+  queues.org
+    .add(
+      "option-clustering",
+      { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" },
+      {
+        repeat: { pattern: "0 */2 * * *" }, // every 2 hours
+        removeOnComplete: 10,
+        removeOnFail: 10,
+      }
+    )
+    .catch((err) => {
+      console.error("[Queue] Failed to register option clustering:", err);
     });
 }
 
