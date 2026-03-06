@@ -12,10 +12,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@vps-vote-db:5432/vps_vote?schema=public
       - REDIS_URL=redis://redis:6379
-      - AI_BASE_URL=${AI_BASE_URL}
       - AI_API_KEY=${AI_API_KEY}
-      - AI_MODEL_LIGHT=${AI_MODEL_LIGHT:-gemini-flash}
-      - AI_MODEL_FULL=${AI_MODEL_FULL:-gemini-pro}
+      - AI_MODEL_LIGHT=${AI_MODEL_LIGHT:-gemini-flash-latest}
+      - AI_MODEL_FULL=${AI_MODEL_FULL:-gemini-pro-latest}
       - IP_API_PRIMARY=http://ip-api.com/json
       - IP_API_FALLBACK=https://ipinfo.io
       - IP_API_FALLBACK_TOKEN=${IP_API_FALLBACK_TOKEN:-}

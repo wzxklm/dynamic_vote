@@ -1,19 +1,20 @@
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
-const globalForAI = globalThis as unknown as { ai: OpenAI };
+const globalForAI = globalThis as unknown as { ai: GoogleGenAI };
 
-function getAI(): OpenAI {
+function getAI(): GoogleGenAI {
   if (!globalForAI.ai) {
-    globalForAI.ai = new OpenAI({
+    globalForAI.ai = new GoogleGenAI({
       apiKey: process.env.AI_API_KEY,
-      baseURL: process.env.AI_BASE_URL,
     });
   }
   return globalForAI.ai;
 }
 
 // Lazy accessor — only instantiated at runtime when first used
-export const ai = new Proxy({} as OpenAI, {
+export const ai = new Proxy({} as GoogleGenAI, {
   get(_target, prop) {
     return (getAI() as unknown as Record<string | symbol, unknown>)[prop];
   },
@@ -41,12 +42,6 @@ const layerRules = (action: string) => `各层级${action}严格度不同：
 const COMBINATION_RULES = `组合输入处理：
 - 如果输入包含多个值（用"和""与""+"","等连接），只要其中任意一个与候选项等价，即视为匹配
 - 组合值与单值的包含关系也算等价：如 "hysteria2和vless" 与 "Hysteria2" 等价`;
-
-function extractContent(response: OpenAI.Chat.Completions.ChatCompletion): string {
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("AI returned empty content");
-  return content;
-}
 
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
@@ -103,34 +98,16 @@ ${COMBINATION_RULES}
 特殊情况处理：
 - 如果用户输入同时匹配多个候选项，选择第一个匹配的
 
-示例 1（精确匹配）：
-候选：[{"id":"abc","value":"Hysteria2"},{"id":"def","value":"VLESS"}]
-输入："hy2"
-输出：{"matched": true, "option_id": "abc"}
+严格返回 JSON，不要解释，不要添加额外字段。`;
 
-示例 2（组合输入，部分匹配）：
-候选：[{"id":"abc","value":"Hysteria2"},{"id":"def","value":"VLESS"}]
-输入："hysteria2和vless+reality+vision"
-输出：{"matched": true, "option_id": "abc"}
-
-示例 3（无匹配）：
-候选：[{"id":"abc","value":"Hysteria2"}]
-输入："Shadowsocks"
-输出：{"matched": false, "option_id": null}
-
-示例 4（keyConfig 宽松匹配）：
-候选：[{"id":"abc","value":"端口443"},{"id":"def","value":"默认配置"}]
-输入："443端口"
-输出：{"matched": true, "option_id": "abc"}
-
-严格返回 JSON：{"matched": true, "option_id": "xxx"} 或 {"matched": false, "option_id": null}
-matched 字段必须是布尔值 true 或 false，不要用字符串。
-不要解释，不要添加额外字段。`;
+const matchResultSchema = z.object({
+  matched: z.boolean(),
+  option_id: z.nullable(z.string()),
+});
 
 /**
  * Use AI to match user input against candidate options.
  * Returns match result with option_id if matched.
- * Retries once on JSON parse error, uses exponential backoff for network errors.
  */
 export async function matchOption(
   layer: string,
@@ -154,24 +131,24 @@ ${optionsJson}
 
 用户输入："${userInput}"
 
-判断用户输入是否与候选列表中某一项等价（含组合输入中的部分匹配）。
-返回 JSON（matched 必须是布尔值）：
-- 匹配：{"matched": true, "option_id": "对应选项的 id"}
-- 不匹配：{"matched": false, "option_id": null}`;
+判断用户输入是否与候选列表中某一项等价（含组合输入中的部分匹配）。`;
 
   const makeRequest = async (): Promise<MatchResult> => {
-    const response = await ai.chat.completions.create({
+    const response = await ai.models.generateContent({
       model: process.env.AI_MODEL_LIGHT || "gemini-flash-latest",
-      temperature: 0,
-      max_tokens: 256,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: MATCH_SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
+      contents: userPrompt,
+      config: {
+        systemInstruction: MATCH_SYSTEM_PROMPT,
+        temperature: 0,
+        maxOutputTokens: 256,
+        responseMimeType: "application/json",
+        responseJsonSchema: zodToJsonSchema(matchResultSchema),
+      },
     });
 
-    const content = extractContent(response);
+    const content = response.text;
+    if (!content) throw new Error("AI returned empty content");
+
     const parsed = JSON.parse(content) as Record<string, unknown>;
 
     // Tolerant parsing: coerce string "true"/"false" to boolean
@@ -253,30 +230,21 @@ export async function generateReport(markdownTable: string): Promise<string> {
   const userPrompt = `以下是 VPS IP 封锁投票统计数据（Markdown 表格），请据此生成分析报告：\n\n${markdownTable}`;
 
   const makeRequest = async (): Promise<string> => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const response = await ai.models.generateContent({
+      model: process.env.AI_MODEL_FULL || "gemini-pro-latest",
+      contents: userPrompt,
+      config: {
+        systemInstruction: REPORT_SYSTEM_PROMPT,
+        temperature: 0.3,
+        httpOptions: { timeout: 60000 },
+      },
+    });
 
-    try {
-      const response = await ai.chat.completions.create(
-        {
-          model: process.env.AI_MODEL_FULL || "gemini-pro-latest",
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: REPORT_SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-        },
-        { signal: controller.signal }
-      );
-
-      const content = extractContent(response);
-      if (content.trim().length === 0) {
-        throw new Error("AI returned empty content");
-      }
-      return content;
-    } finally {
-      clearTimeout(timeout);
+    const content = response.text;
+    if (!content || content.trim().length === 0) {
+      throw new Error("AI returned empty content");
     }
+    return content;
   };
 
   const result = await retryWithBackoff(makeRequest, {
@@ -321,33 +289,25 @@ ${layerRules("合并")}
 
 ${COMBINATION_RULES}
 
-示例 1（协议严格合并）：
-输入：[{"id":"a","value":"Hysteria2","submitCount":5},{"id":"b","value":"hy2","submitCount":2},{"id":"c","value":"VLESS","submitCount":3}]
-输出：{"clusters":[{"canonical_id":"a","member_ids":["a","b"]}]}
-（Hysteria2 和 hy2 等价，VLESS 无等价项所以不出现）
-
-示例 2（keyConfig 宽松合并）：
-输入：[{"id":"a","value":"端口443","submitCount":3},{"id":"b","value":"443端口","submitCount":1},{"id":"c","value":"默认配置","submitCount":2}]
-输出：{"clusters":[{"canonical_id":"a","member_ids":["a","b"]}]}
-（"端口443"和"443端口"含义相同，"默认配置"无等价项）
-
-示例 3（组合值合并）：
-输入：[{"id":"a","value":"Hysteria2","submitCount":5},{"id":"b","value":"hysteria2和vless","submitCount":1}]
-输出：{"clusters":[{"canonical_id":"a","member_ids":["a","b"]}]}
-（组合值"hysteria2和vless"包含"Hysteria2"，视为等价）
-
 要求：
 - 只返回有 2 个及以上成员的组
 - 每组中 canonical_id 选 submitCount 最高的选项，submitCount 相同则选排在前面的
 - 不属于任何组的单独选项不要出现在结果中
 
-严格返回 JSON：{"clusters": [...]} 或 {"clusters": []}
-clusters 必须是数组。不要解释，不要添加额外字段。`;
+严格返回 JSON，不要解释，不要添加额外字段。`;
+
+const clusterResultSchema = z.object({
+  clusters: z.array(
+    z.object({
+      canonical_id: z.string(),
+      member_ids: z.array(z.string()),
+    })
+  ),
+});
 
 /**
  * Use AI to cluster semantically equivalent options.
  * Returns groups of equivalent options with a canonical for each group.
- * Retries with exponential backoff on failure.
  */
 export async function clusterOptions(
   layer: string,
@@ -363,32 +323,31 @@ export async function clusterOptions(
 选项列表：
 ${optionsJson}
 
-识别语义等价的选项并分组。返回 JSON：
-{"clusters": [{"canonical_id": "submitCount最高的选项id", "member_ids": ["该组所有成员的id，包括canonical"]}]}
-
-如果没有任何等价组，返回：{"clusters": []}`;
+识别语义等价的选项并分组。`;
 
   const makeRequest = async (): Promise<ClusterResult> => {
-    // max_tokens scales with candidates: base 512 + 128 per candidate
     const clusterMaxTokens = Math.min(512 + candidates.length * 128, 8192);
-    const response = await ai.chat.completions.create({
+    const response = await ai.models.generateContent({
       model: process.env.AI_MODEL_LIGHT || "gemini-flash-latest",
-      temperature: 0,
-      max_tokens: clusterMaxTokens,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: CLUSTER_SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
+      contents: userPrompt,
+      config: {
+        systemInstruction: CLUSTER_SYSTEM_PROMPT,
+        temperature: 0,
+        maxOutputTokens: clusterMaxTokens,
+        responseMimeType: "application/json",
+        responseJsonSchema: zodToJsonSchema(clusterResultSchema),
+      },
     });
 
-    const content = extractContent(response);
+    const content = response.text;
+    if (!content) throw new Error("AI returned empty content");
+
     const parsed = JSON.parse(content) as Record<string, unknown>;
 
     // Tolerant parsing: accept clusters at top level or nested
     const rawClusters = Array.isArray(parsed.clusters)
       ? parsed.clusters
-      : Array.isArray(parsed.result) // some models wrap in "result"
+      : Array.isArray(parsed.result)
         ? parsed.result
         : null;
     if (!rawClusters) {
@@ -402,10 +361,8 @@ ${optionsJson}
 
     for (const cluster of rawClusters as ClusterResult["clusters"]) {
       if (!cluster.canonical_id || !Array.isArray(cluster.member_ids)) continue;
-      // Filter members to only valid, unseen IDs
       const members = cluster.member_ids.filter((id) => validIds.has(id) && !seen.has(id));
       if (members.length < 2) continue;
-      // Ensure canonical_id is a valid member
       const canonicalId = members.includes(cluster.canonical_id) ? cluster.canonical_id : members[0];
       for (const id of members) seen.add(id);
       validClusters.push({ canonical_id: canonicalId, member_ids: members });

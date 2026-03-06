@@ -13,14 +13,14 @@
 
 ## 技术栈
 
-Next.js 14 (App Router) · TypeScript · Shadcn/ui · Tailwind CSS · ECharts · Prisma · PostgreSQL · Redis · BullMQ · OpenAI SDK
+Next.js 14 (App Router) · TypeScript · Shadcn/ui · Tailwind CSS · ECharts · Prisma · PostgreSQL · Redis · BullMQ · Google Generative AI SDK
 
 ## 部署指南
 
 ### 前置要求
 
 - Docker 和 Docker Compose（v2）
-- 一个 OpenAI 兼容的 AI API（用于动态选项匹配和报告生成）
+- Google AI Studio API Key（用于动态选项匹配和报告生成，从 https://aistudio.google.com/apikey 获取）
 
 ### 1. 克隆仓库
 
@@ -40,10 +40,9 @@ cp .env.example .env
 | 变量 | 说明 | 必填 |
 |------|------|:----:|
 | `DB_PASSWORD` | PostgreSQL 密码 | ✅ |
-| `AI_BASE_URL` | AI API 地址（OpenAI 兼容） | ✅ |
-| `AI_API_KEY` | AI API 密钥 | ✅ |
-| `AI_MODEL_LIGHT` | 轻量模型（默认 `gemini-flash`） | |
-| `AI_MODEL_FULL` | 完整模型（默认 `gemini-pro`） | |
+| `AI_API_KEY` | Google AI Studio API Key | ✅ |
+| `AI_MODEL_LIGHT` | 轻量模型（默认 `gemini-flash-latest`） | |
+| `AI_MODEL_FULL` | 完整模型（默认 `gemini-pro-latest`） | |
 | `NEXT_PUBLIC_SITE_URL` | 站点公开 URL（默认 `http://localhost:3000`） | |
 
 完整变量说明见 [docker/.env.example](docker/.env.example)。
