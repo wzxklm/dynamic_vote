@@ -345,9 +345,21 @@ export async function addToMatchQueue(data: MatchJobData): Promise<boolean> {
   const queue = queues[data.layer];
   if (!queue) return false;
 
+  const jobId = `${data.voteId}-${data.layer}`;
+
+  // Remove stale failed/completed job so BullMQ accepts re-enqueue (orphan recovery fix)
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === "failed" || state === "completed") {
+      await existing.remove();
+      console.log(`[Queue] removed stale ${state} job ${jobId}`);
+    }
+  }
+
   try {
     await queue.add("match", data, {
-      jobId: `${data.voteId}-${data.layer}`,
+      jobId,
       attempts: 3,
       backoff: { type: "exponential", delay: 2000 },
       removeOnComplete: 100,
