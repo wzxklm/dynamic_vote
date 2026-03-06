@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -144,7 +145,7 @@ export default function ReportPage() {
           </div>
 
           <article className="prose prose-gray dark:prose-invert max-w-none">
-            <ReactMarkdown>{report.report}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.report}</ReactMarkdown>
           </article>
         </>
       )}
