@@ -163,6 +163,7 @@ ${optionsJson}
     const response = await ai.chat.completions.create({
       model: process.env.AI_MODEL_LIGHT || "gemini-flash-latest",
       temperature: 0,
+      max_tokens: 256,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: MATCH_SYSTEM_PROMPT },
@@ -368,9 +369,12 @@ ${optionsJson}
 如果没有任何等价组，返回：{"clusters": []}`;
 
   const makeRequest = async (): Promise<ClusterResult> => {
+    // max_tokens scales with candidates: base 512 + 128 per candidate
+    const clusterMaxTokens = Math.min(512 + candidates.length * 128, 8192);
     const response = await ai.chat.completions.create({
       model: process.env.AI_MODEL_LIGHT || "gemini-flash-latest",
       temperature: 0,
+      max_tokens: clusterMaxTokens,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: CLUSTER_SYSTEM_PROMPT },
