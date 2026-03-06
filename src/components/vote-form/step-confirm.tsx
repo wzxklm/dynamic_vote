@@ -8,6 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
+function ConfirmRow({ label, value, isCustom }: { label: string; value: string; isCustom?: boolean }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span>
+        {value}
+        {isCustom && <Badge variant="secondary" className="ml-1 text-xs">自定义</Badge>}
+      </span>
+    </div>
+  );
+}
+
 export function StepConfirm() {
   const store = useVoteStore();
   const router = useRouter();
@@ -47,7 +59,8 @@ export function StepConfirm() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
+        let err: { error?: string; retryAfter?: number } = {};
+        try { err = await res.json(); } catch {}
         if (res.status === 429) {
           toast({
             variant: "destructive",
@@ -112,71 +125,28 @@ export function StepConfirm() {
     );
   }
 
+  const rows = [
+    { label: "是否被封", value: store.isBlocked ? "被封" : "未被封" },
+    { label: "厂商", value: store.org, isCustom: store.customOrg },
+    { label: "ASN", value: store.asn, isCustom: store.customAsn },
+    { label: "用途", value: store.usage === "proxy" ? "代理" : "网站" },
+    ...(store.usage === "proxy"
+      ? [
+          { label: "协议", value: store.protocol || "", isCustom: store.customProtocol },
+          { label: "关键配置", value: store.keyConfig || "", isCustom: store.customKeyConfig },
+        ]
+      : []),
+    { label: "数量", value: `${store.count} 台` },
+  ];
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground mb-2">请确认投票信息：</p>
 
       <div className="rounded-lg border p-3 space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">是否被封</span>
-          <span>{store.isBlocked ? "被封" : "未被封"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">厂商</span>
-          <span>
-            {store.org}
-            {store.customOrg && (
-              <Badge variant="secondary" className="ml-1 text-xs">
-                自定义
-              </Badge>
-            )}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">ASN</span>
-          <span>
-            {store.asn}
-            {store.customAsn && (
-              <Badge variant="secondary" className="ml-1 text-xs">
-                自定义
-              </Badge>
-            )}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">用途</span>
-          <span>{store.usage === "proxy" ? "代理" : "网站"}</span>
-        </div>
-        {store.usage === "proxy" && (
-          <>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">协议</span>
-              <span>
-                {store.protocol}
-                {store.customProtocol && (
-                  <Badge variant="secondary" className="ml-1 text-xs">
-                    自定义
-                  </Badge>
-                )}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">关键配置</span>
-              <span>
-                {store.keyConfig}
-                {store.customKeyConfig && (
-                  <Badge variant="secondary" className="ml-1 text-xs">
-                    自定义
-                  </Badge>
-                )}
-              </span>
-            </div>
-          </>
-        )}
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">数量</span>
-          <span>{store.count} 台</span>
-        </div>
+        {rows.map((row) => (
+          <ConfirmRow key={row.label} label={row.label} value={row.value} isCustom={row.isCustom} />
+        ))}
       </div>
 
       {hasCustom && (

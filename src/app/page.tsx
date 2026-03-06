@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { SunburstNode } from "@/types";
+import { formatTimeAgo } from "@/lib/utils";
+import { useStats } from "@/hooks/use-stats";
 
 const SunburstChart = dynamic(() => import("@/components/sunburst-chart"), {
   ssr: false,
@@ -16,22 +16,6 @@ const SunburstChart = dynamic(() => import("@/components/sunburst-chart"), {
     </div>
   ),
 });
-
-interface StatsData {
-  total: number;
-  updatedAt: string;
-  tree: { name: string; value: number; children: SunburstNode[] };
-}
-
-function formatTimeAgo(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.floor(hours / 24)} 天前`;
-}
 
 function HomeSkeleton() {
   return (
@@ -53,28 +37,7 @@ function HomeSkeleton() {
 }
 
 export default function Home() {
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/stats");
-      if (!res.ok) throw new Error("获取统计数据失败");
-      const data = await res.json();
-      setStats(data);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+  const { stats, loading, error } = useStats();
 
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-6xl mx-auto">

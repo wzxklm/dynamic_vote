@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { SunburstNode } from "@/types";
+import { StatsResponse } from "@/types";
+import { formatTimeAgo } from "@/lib/utils";
+import { treeToExportRows } from "@/lib/tree-utils";
+import { useStats } from "@/hooks/use-stats";
 
 const SunburstChart = dynamic(() => import("@/components/sunburst-chart"), {
   ssr: false,
@@ -17,82 +20,8 @@ const SunburstChart = dynamic(() => import("@/components/sunburst-chart"), {
   ),
 });
 
-interface StatsData {
-  total: number;
-  updatedAt: string;
-  tree: { name: string; value: number; children: SunburstNode[] };
-}
-
-interface ExportRow {
-  isBlocked: string;
-  org: string;
-  asn: string;
-  usage: string;
-  protocol: string;
-  keyConfig: string;
-  count: number;
-  parentRatio: string;
-  totalRatio: string;
-}
-
-function formatTimeAgo(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.floor(hours / 24)} 天前`;
-}
-
-function formatPercent(part: number, whole: number): string {
-  if (whole === 0) return "0.0%";
-  return ((part / whole) * 100).toFixed(1) + "%";
-}
-
-function treeToRows(tree: { name: string; value: number; children?: SunburstNode[] }): ExportRow[] {
-  const total = tree.value;
-  const rows: ExportRow[] = [];
-  if (!tree.children) return rows;
-
-  for (const blockedNode of tree.children) {
-    if (!blockedNode.children) continue;
-    for (const orgNode of blockedNode.children) {
-      if (!orgNode.children) continue;
-      for (const asnNode of orgNode.children) {
-        if (!asnNode.children) continue;
-        for (const usageNode of asnNode.children) {
-          if (usageNode.name === "网站") {
-            rows.push({
-              isBlocked: blockedNode.name, org: orgNode.name, asn: asnNode.name,
-              usage: "网站", protocol: "-", keyConfig: "-",
-              count: usageNode.value,
-              parentRatio: formatPercent(usageNode.value, asnNode.value),
-              totalRatio: formatPercent(usageNode.value, total),
-            });
-          } else if (usageNode.children) {
-            for (const protoNode of usageNode.children) {
-              if (!protoNode.children) continue;
-              for (const kcNode of protoNode.children) {
-                rows.push({
-                  isBlocked: blockedNode.name, org: orgNode.name, asn: asnNode.name,
-                  usage: "代理", protocol: protoNode.name, keyConfig: kcNode.name,
-                  count: kcNode.value,
-                  parentRatio: formatPercent(kcNode.value, protoNode.value),
-                  totalRatio: formatPercent(kcNode.value, total),
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  return rows;
-}
-
-function StatsTable({ tree }: { tree: StatsData["tree"] }) {
-  const rows = useMemo(() => treeToRows(tree), [tree]);
+function StatsTable({ tree }: { tree: StatsResponse["tree"] }) {
+  const rows = useMemo(() => treeToExportRows(tree), [tree]);
 
   if (rows.length === 0) return null;
 
@@ -157,37 +86,20 @@ function StatsSkeleton() {
 }
 
 export default function StatsPage() {
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { stats, loading, error } = useStats();
   const [exporting, setExporting] = useState(false);
   const [copying, setCopying] = useState(false);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/stats");
-      if (!res.ok) throw new Error("获取统计数据失败");
-      const data = await res.json();
-      setStats(data);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
+  const fetchMarkdown = useCallback(async (): Promise<string> => {
+    const res = await fetch("/api/export");
+    if (!res.ok) throw new Error("导出失败");
+    return res.text();
   }, []);
-
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
 
   const handleExport = useCallback(async () => {
     try {
       setExporting(true);
-      const res = await fetch("/api/export");
-      if (!res.ok) throw new Error("导出失败");
-      const markdown = await res.text();
+      const markdown = await fetchMarkdown();
 
       const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -201,14 +113,12 @@ export default function StatsPage() {
     } finally {
       setExporting(false);
     }
-  }, []);
+  }, [fetchMarkdown]);
 
   const handleCopyMarkdown = useCallback(async () => {
     try {
       setCopying(true);
-      const res = await fetch("/api/export");
-      if (!res.ok) throw new Error("导出失败");
-      const markdown = await res.text();
+      const markdown = await fetchMarkdown();
       await navigator.clipboard.writeText(markdown);
       alert("已复制到剪贴板");
     } catch (e) {
@@ -216,7 +126,7 @@ export default function StatsPage() {
     } finally {
       setCopying(false);
     }
-  }, []);
+  }, [fetchMarkdown]);
 
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-6xl mx-auto">

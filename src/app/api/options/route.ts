@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { redis } from "@/lib/db";
+import { prisma, redis } from "@/lib/db";
 
 const VALID_LAYERS = ["org", "asn", "protocol", "keyConfig"];
 const CACHE_TTL = 600; // 10 minutes in seconds

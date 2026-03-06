@@ -11,11 +11,8 @@ export function StepUsage() {
     if (usage === "website") {
       store.setField("protocol", null);
       store.setField("keyConfig", null);
-      // Skip to count step (step 5 in website mode)
-      store.nextStep();
-    } else {
-      store.nextStep();
     }
+    store.nextStep();
   };
 
   return (

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getStats, exportToMarkdown } from "@/lib/stats";
 import { generateReport } from "@/lib/ai";
 import { checkReportRateLimit } from "@/lib/rate-limit";
+import { getClientIp, errorResponse } from "@/lib/utils";
 
 /**
  * GET /api/report — Retrieve cached AI report
@@ -16,7 +17,7 @@ export async function GET() {
     });
 
     if (!report) {
-      return NextResponse.json({ error: "尚未生成过报告" }, { status: 404 });
+      return errorResponse("尚未生成过报告", 404);
     }
 
     // Get current total votes for expiry detection
@@ -24,7 +25,7 @@ export async function GET() {
       where: { resolved: true },
       _sum: { count: true },
     });
-    const currentTotalVotes = result._sum.count || 0;
+    const currentTotalVotes = result._sum.count ?? 0;
 
     return NextResponse.json({
       report: report.content,
@@ -34,10 +35,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Report retrieval failed:", error);
-    return NextResponse.json(
-      { error: "服务器内部错误" },
-      { status: 500 }
-    );
+    return errorResponse("服务器内部错误", 500);
   }
 }
 
@@ -46,10 +44,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   // Rate limit
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
+  const ip = getClientIp(request);
 
   const rateLimit = await checkReportRateLimit(ip);
   if (!rateLimit.allowed) {
@@ -65,14 +60,10 @@ export async function POST(request: NextRequest) {
     const stats = await getStats();
     const markdownTable = exportToMarkdown(stats.tree);
 
-    const reportContent = await generateReport(markdownTable);
+    // Snapshot total votes BEFORE AI call to match the data the report is based on
+    const totalVotesAtGeneration = stats.total;
 
-    // Get total votes snapshot
-    const totalResult = await prisma.vote.aggregate({
-      where: { resolved: true },
-      _sum: { count: true },
-    });
-    const totalVotesAtGeneration = totalResult._sum.count || 0;
+    const reportContent = await generateReport(markdownTable);
 
     // Atomically delete old reports and save new one
     const [, report] = await prisma.$transaction([
@@ -95,16 +86,10 @@ export async function POST(request: NextRequest) {
       error instanceof Error ? error.message : "Unknown AI error";
 
     if (message === "TIMEOUT") {
-      return NextResponse.json(
-        { error: "AI 服务响应超时，请稍后再试" },
-        { status: 504 }
-      );
+      return errorResponse("AI 服务响应超时，请稍后再试", 504);
     }
 
     console.error("Report generation failed:", error);
-    return NextResponse.json(
-      { error: "AI 服务不可用，请稍后再试" },
-      { status: 502 }
-    );
+    return errorResponse("AI 服务不可用，请稍后再试", 502);
   }
 }

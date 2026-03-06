@@ -26,20 +26,10 @@ const STEP_TITLES: Record<number, string> = {
 export function VoteWizard() {
   const { step, usage, prevStep } = useVoteStore();
 
-  // Skip protocol/keyConfig steps for website usage
-  const effectiveStep = step;
   const totalSteps = usage === "website" ? 6 : 8;
 
-  const getDisplayStep = () => {
-    if (usage === "website" && step >= 5) {
-      // website: step 5 = count (normally 7), step 6 = confirm (normally 8)
-      return step;
-    }
-    return step;
-  };
-
   const renderStep = () => {
-    switch (effectiveStep) {
+    switch (step) {
       case 1:
         return <StepBlocked />;
       case 2:
@@ -75,13 +65,13 @@ export function VoteWizard() {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">{getStepTitle()}</CardTitle>
           <span className="text-sm text-muted-foreground">
-            步骤 {getDisplayStep()} / {totalSteps}
+            步骤 {step} / {totalSteps}
           </span>
         </div>
         <div className="w-full bg-muted rounded-full h-2 mt-2">
           <div
             className="bg-primary rounded-full h-2 transition-all"
-            style={{ width: `${(getDisplayStep() / totalSteps) * 100}%` }}
+            style={{ width: `${(step / totalSteps) * 100}%` }}
           />
         </div>
       </CardHeader>

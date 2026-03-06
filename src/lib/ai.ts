@@ -19,6 +19,47 @@ export const ai = new Proxy({} as OpenAI, {
   },
 });
 
+// --- Shared constants and utilities ---
+
+const EQUIVALENCE_RULES = `等价规则：
+- 多语言表述：日本 = JP = Japan
+- 缩写/简称：搬瓦工 = BWG = BandwagonHost
+- 俗称/别名：DMIT = 大妈IT
+- 大小写变体：vultr = Vultr = VULTR
+- 技术等价：Hysteria2 = hy2 = Hysteria 2
+
+判断标准：严格等价才算匹配，含义相近但不同的选项不算匹配。
+例如 "Shadowsocks" 和 "ShadowsocksR" 不等价。`;
+
+function extractContent(response: OpenAI.Chat.Completions.ChatCompletion): string {
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("AI returned empty content");
+  return content;
+}
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  opts: {
+    delays: number[];
+    shouldRetryImmediately?: (error: unknown, attempt: number) => boolean;
+    transformError?: (error: unknown) => Error;
+  }
+): Promise<T> {
+  const { delays, shouldRetryImmediately, transformError } = opts;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (shouldRetryImmediately?.(error, attempt)) continue;
+      if (attempt >= delays.length) {
+        throw transformError ? transformError(error) : error;
+      }
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+  throw new Error("Retry exhausted");
+}
+
 // --- AI Match Option ---
 
 interface MatchCandidate {
@@ -33,15 +74,7 @@ interface MatchResult {
 
 const MATCH_SYSTEM_PROMPT = `你是一个选项匹配系统。判断用户输入是否与候选列表中某一项等价。
 
-等价规则：
-- 多语言表述：日本 = JP = Japan
-- 缩写/简称：搬瓦工 = BWG = BandwagonHost
-- 俗称/别名：DMIT = 大妈IT
-- 大小写变体：vultr = Vultr = VULTR
-- 技术等价：Hysteria2 = hy2 = Hysteria 2
-
-判断标准：严格等价才算匹配，含义相近但不同的选项不算匹配。
-例如 "Shadowsocks" 和 "ShadowsocksR" 不等价。
+${EQUIVALENCE_RULES}
 
 严格返回 JSON，不要解释，不要添加额外字段。`;
 
@@ -82,9 +115,7 @@ ${optionsJson}
       ],
     });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error("AI returned empty content");
-
+    const content = extractContent(response);
     const parsed = JSON.parse(content) as MatchResult;
     if (typeof parsed.matched !== "boolean") {
       throw new Error("Invalid AI response format");
@@ -95,32 +126,15 @@ ${optionsJson}
     return parsed;
   };
 
-  // Retry logic: JSON parse error → immediate retry once
-  // Network/5xx → exponential backoff 3 times (2s, 4s, 8s)
-  const delays = [2000, 4000, 8000];
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await makeRequest();
-    } catch (error) {
+  return retryWithBackoff(makeRequest, {
+    delays: [2000, 4000, 8000],
+    shouldRetryImmediately: (error, attempt) => {
       const isJsonError =
         error instanceof SyntaxError ||
         (error instanceof Error && error.message === "Invalid AI response format");
-
-      if (isJsonError && attempt === 0) {
-        // Immediate retry for JSON errors (once)
-        continue;
-      }
-
-      if (attempt >= 2) throw error;
-
-      // Network/5xx: exponential backoff
-      const delay = delays[Math.min(attempt, delays.length - 1)];
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  throw new Error("AI match failed after all retries");
+      return isJsonError && attempt === 0;
+    },
+  });
 }
 
 // --- AI Report Generation ---
@@ -177,8 +191,8 @@ export async function generateReport(markdownTable: string): Promise<string> {
         { signal: controller.signal }
       );
 
-      const content = response.choices[0]?.message?.content;
-      if (!content || content.trim().length === 0) {
+      const content = extractContent(response);
+      if (content.trim().length === 0) {
         throw new Error("AI returned empty content");
       }
       return content;
@@ -187,23 +201,15 @@ export async function generateReport(markdownTable: string): Promise<string> {
     }
   };
 
-  const delays = [3000, 6000];
-
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    try {
-      return await makeRequest();
-    } catch (error) {
-      if (attempt >= 2) {
-        if (error instanceof Error && error.name === "AbortError") {
-          throw new Error("TIMEOUT");
-        }
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
-    }
-  }
-
-  throw new Error("AI report generation failed after all retries");
+  return retryWithBackoff(makeRequest, {
+    delays: [3000, 6000],
+    transformError: (error) =>
+      error instanceof Error && error.name === "AbortError"
+        ? new Error("TIMEOUT")
+        : error instanceof Error
+          ? error
+          : new Error("Unknown AI error"),
+  });
 }
 
 // --- AI Option Clustering ---
@@ -223,15 +229,7 @@ export interface ClusterResult {
 
 const CLUSTER_SYSTEM_PROMPT = `你是一个选项聚类系统。给定一组选项，识别语义等价的选项并分组。
 
-等价规则：
-- 多语言表述：日本 = JP = Japan
-- 缩写/简称：搬瓦工 = BWG = BandwagonHost
-- 俗称/别名：DMIT = 大妈IT
-- 大小写变体：vultr = Vultr = VULTR
-- 技术等价：Hysteria2 = hy2 = Hysteria 2
-
-判断标准：严格等价才算同组，含义相近但不同的选项不算同组。
-例如 "Shadowsocks" 和 "ShadowsocksR" 不等价。
+${EQUIVALENCE_RULES}
 
 要求：
 - 只返回有 2 个及以上成员的组
@@ -273,9 +271,7 @@ ${optionsJson}
       ],
     });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error("AI returned empty content");
-
+    const content = extractContent(response);
     const parsed = JSON.parse(content) as ClusterResult;
     if (!Array.isArray(parsed.clusters)) {
       throw new Error("Invalid AI cluster response format");
@@ -283,27 +279,13 @@ ${optionsJson}
     return parsed;
   };
 
-  const delays = [2000, 4000, 8000];
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await makeRequest();
-    } catch (error) {
+  return retryWithBackoff(makeRequest, {
+    delays: [2000, 4000, 8000],
+    shouldRetryImmediately: (error, attempt) => {
       const isJsonError =
         error instanceof SyntaxError ||
         (error instanceof Error && error.message === "Invalid AI cluster response format");
-
-      if (isJsonError && attempt === 0) {
-        continue;
-      }
-
-      if (attempt >= 2) throw error;
-
-      const delay = delays[Math.min(attempt, delays.length - 1)];
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  throw new Error("AI cluster failed after all retries");
+      return isJsonError && attempt === 0;
+    },
+  });
 }
-

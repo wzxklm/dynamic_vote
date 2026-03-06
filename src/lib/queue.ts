@@ -5,9 +5,11 @@ import { matchOption, clusterOptions } from "./ai";
 import {
   clearOptionCache,
   deduplicateCount,
+  getFieldsToCheck,
   promoteOptionIfNeeded,
   tryResolveVote,
 } from "./vote-service";
+import { isPrismaUniqueViolation } from "./utils";
 
 // --- Types ---
 
@@ -71,6 +73,8 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
   // Determine the layer field mapping for Vote table
   const layerField = layer as "org" | "asn" | "protocol" | "keyConfig";
 
+  let optionIdToPromote: string | undefined;
+
   if (matchResult.matched && matchResult.option_id) {
     // Match found → normalize vote value + deduplicate count
     const matchedOption = await prisma.dynamicOption.findUnique({
@@ -86,6 +90,7 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
 
       // Deduplicate count
       await deduplicateCount(matchedOption.id, fingerprint);
+      optionIdToPromote = matchedOption.id;
     }
   } else {
     // No match → create new DynamicOption
@@ -103,17 +108,11 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
     });
 
     await deduplicateCount(newOption.id, fingerprint);
+    optionIdToPromote = newOption.id;
   }
 
   // Check if the relevant option should be promoted
-  if (matchResult.matched && matchResult.option_id) {
-    await promoteOptionIfNeeded(matchResult.option_id);
-  } else {
-    const opt = await prisma.dynamicOption.findUnique({
-      where: { layer_value_parentKey: { layer, value, parentKey } },
-    });
-    if (opt) await promoteOptionIfNeeded(opt.id);
-  }
+  if (optionIdToPromote) await promoteOptionIfNeeded(optionIdToPromote);
 
   // Try to resolve the vote
   await tryResolveVote(voteId);
@@ -165,14 +164,14 @@ async function recoverOrphanVotes(): Promise<void> {
   const orphanVotes = await prisma.vote.findMany({
     where: {
       resolved: false,
-      queueFailed: false,
       createdAt: { lt: tenMinutesAgo },
     },
   });
 
   for (const vote of orphanVotes) {
     // Re-classify fields
-    const fieldsToCheck = getVoteFieldsToCheck(vote);
+    let requeued = false;
+    const fieldsToCheck = getFieldsToCheck(vote);
 
     for (const field of fieldsToCheck) {
       const option = await prisma.dynamicOption.findUnique({
@@ -189,6 +188,7 @@ async function recoverOrphanVotes(): Promise<void> {
       // meaning the original queue job was lost (Redis restart, worker crash, etc.)
       // If option exists (even unpromoted), AI already processed it — don't re-queue.
       if (!option) {
+        requeued = true;
         await addToMatchQueue({
           voteId: vote.id,
           layer: field.layer,
@@ -198,31 +198,12 @@ async function recoverOrphanVotes(): Promise<void> {
         });
       }
     }
-  }
-}
 
-function getVoteFieldsToCheck(vote: {
-  org: string;
-  asn: string;
-  usage: string;
-  protocol: string | null;
-  keyConfig: string | null;
-}) {
-  const fields = [
-    { layer: "org", value: vote.org, parentKey: "" },
-    { layer: "asn", value: vote.asn, parentKey: vote.org },
-  ];
-
-  if (vote.usage === "proxy") {
-    if (vote.protocol) {
-      fields.push({ layer: "protocol", value: vote.protocol, parentKey: "" });
-    }
-    if (vote.keyConfig) {
-      fields.push({ layer: "keyConfig", value: vote.keyConfig, parentKey: "" });
+    // If all options already exist but vote is still unresolved, try to resolve it now
+    if (!requeued) {
+      await tryResolveVote(vote.id);
     }
   }
-
-  return fields;
 }
 
 // --- Option clustering (repeatable job) ---
@@ -246,11 +227,7 @@ async function clusterUnpromotedOptions(): Promise<void> {
   const groups: Record<string, OptionItem[]> = {};
   for (const opt of options) {
     const key = `${opt.layer}::${opt.parentKey}`;
-    if (groups[key]) {
-      groups[key].push(opt);
-    } else {
-      groups[key] = [opt];
-    }
+    (groups[key] ??= []).push(opt);
   }
 
   for (const group of Object.values(groups)) {
@@ -275,7 +252,8 @@ async function clusterUnpromotedOptions(): Promise<void> {
       if (validMembers.length < 2) continue;
       if (!groupIds.has(cluster.canonical_id)) continue;
 
-      const canonical = group.find((o: OptionItem) => o.id === cluster.canonical_id)!;
+      const canonical = group.find((o: OptionItem) => o.id === cluster.canonical_id);
+      if (!canonical) continue;
       const others = validMembers.filter((id: string) => id !== cluster.canonical_id);
 
       const layerField = layer as "org" | "asn" | "protocol" | "keyConfig";
@@ -294,23 +272,18 @@ async function clusterUnpromotedOptions(): Promise<void> {
               data: { optionId: canonical.id, fingerprint: contrib.fingerprint },
             });
           } catch (error: unknown) {
-            // P2002 = already contributed to canonical, skip
-            if (
-              error &&
-              typeof error === "object" &&
-              "code" in error &&
-              (error as { code: string }).code === "P2002"
-            ) {
-              continue;
-            }
+            if (isPrismaUniqueViolation(error)) continue;
             throw error;
           }
         }
 
         // Update votes referencing member.value → canonical.value
         const whereClause: Record<string, unknown> = { [layerField]: member.value };
-        if (layer === "asn" && parentKey) {
+        if (layer === "asn" && parentKey !== "") {
           whereClause.org = parentKey;
+        } else if (layer === "protocol" || layer === "keyConfig") {
+          // Scope to the same layer context to avoid cross-context updates
+          whereClause.usage = "proxy";
         }
         await prisma.vote.updateMany({
           where: whereClause,
@@ -377,39 +350,23 @@ export async function addToMatchQueue(data: MatchJobData): Promise<boolean> {
  * Initialize the queue system: create workers and register orphan recovery.
  * Should be called once at app startup.
  */
+function registerRepeatableJob(queue: Queue<MatchJobData>, name: string, pattern: string) {
+  const dummyData: MatchJobData = { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" };
+  queue.add(name, dummyData, {
+    repeat: { pattern },
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  }).catch((err) => {
+    console.error(`[Queue] Failed to register ${name}:`, err);
+  });
+}
+
 export function initQueueSystem(): void {
   const queues = getQueues();
   initWorkers();
 
-  // Register orphan recovery repeatable job on the org queue
-  queues.org
-    .add(
-      "orphan-recovery",
-      { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" },
-      {
-        repeat: { pattern: "0 */2 * * *" }, // every 2 hours
-        removeOnComplete: 10,
-        removeOnFail: 10,
-      }
-    )
-    .catch((err) => {
-      console.error("[Queue] Failed to register orphan recovery:", err);
-    });
-
-  // Register option clustering repeatable job on the org queue
-  queues.org
-    .add(
-      "option-clustering",
-      { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" },
-      {
-        repeat: { pattern: "0 */2 * * *" }, // every 2 hours
-        removeOnComplete: 10,
-        removeOnFail: 10,
-      }
-    )
-    .catch((err) => {
-      console.error("[Queue] Failed to register option clustering:", err);
-    });
+  registerRepeatableJob(queues.org, "orphan-recovery", "0 */2 * * *");
+  registerRepeatableJob(queues.org, "option-clustering", "0 */2 * * *");
 }
 
 // Auto-initialize when this module is imported

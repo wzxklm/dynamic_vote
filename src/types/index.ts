@@ -12,6 +12,8 @@ export interface VoteInput {
 export interface IpLookupResult {
   org: string;
   asn: string;
+  country: string;
+  city: string;
 }
 
 export interface SunburstNode {
@@ -27,8 +29,10 @@ export interface StatsResponse {
 }
 
 export interface OptionItem {
+  id: string;
   value: string;
   isPreset: boolean;
+  promoted: boolean;
 }
 
 export interface ExportRow {

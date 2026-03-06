@@ -1,5 +1,5 @@
-import { prisma } from "./db";
-import { redis } from "./db";
+import { prisma, redis } from "./db";
+import { isPrismaUniqueViolation } from "./utils";
 import type { VoteFormData } from "./validators";
 
 // --- Types ---
@@ -54,14 +54,8 @@ async function checkKnownOptions(
 ): Promise<Set<number>> {
   if (fields.length === 0) return new Set();
 
-  const orClauses = fields.map((f) => ({
-    layer: f.layer,
-    value: f.value,
-    parentKey: f.parentKey,
-  }));
-
   const foundOptions = await prisma.dynamicOption.findMany({
-    where: { OR: orClauses },
+    where: { OR: fields },
     select: { layer: true, value: true, parentKey: true, isPreset: true, promoted: true },
   });
 
@@ -150,15 +144,7 @@ export async function deduplicateCount(
       });
     });
   } catch (error: unknown) {
-    // P2002 = unique constraint violation → already contributed, skip
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      (error as { code: string }).code === "P2002"
-    ) {
-      return;
-    }
+    if (isPrismaUniqueViolation(error)) return;
     throw error;
   }
 }

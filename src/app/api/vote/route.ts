@@ -11,52 +11,41 @@ import {
   checkFingerprintAntiForge,
   validateRequestHeaders,
 } from "@/lib/rate-limit";
+import { getClientIp, errorResponse } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   // Request header validation (detect non-browser clients)
   const headerCheck = validateRequestHeaders(request.headers);
   if (!headerCheck.valid) {
-    return NextResponse.json(
-      { error: headerCheck.error || "请求特征异常" },
-      { status: 400 }
-    );
+    return errorResponse(headerCheck.error || "请求特征异常", 400);
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "请求体格式错误" }, { status: 400 });
+    return errorResponse("请求体格式错误", 400);
   }
 
   // Zod validation
   const parsed = voteSchema.safeParse(body);
   if (!parsed.success) {
     const firstError = parsed.error.errors[0];
-    return NextResponse.json(
-      { error: firstError?.message || "参数校验失败" },
-      { status: 400 }
-    );
+    return errorResponse(firstError?.message || "参数校验失败", 400);
   }
 
   const data = parsed.data;
 
   // Fingerprint format check
   if (!validateFingerprint(data.fingerprint)) {
-    return NextResponse.json(
-      { error: "指纹格式无效" },
-      { status: 400 }
-    );
+    return errorResponse("指纹格式无效", 400);
   }
 
   // Get client IP
   // Limitation: falls back to "unknown" when behind proxies that don't set
   // x-forwarded-for / x-real-ip headers, which means rate-limiting by IP
   // won't work correctly in that scenario.
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
+  const ip = getClientIp(request);
 
   // Rate limit check
   const rateLimit = await checkVoteRateLimit(ip, data.fingerprint);
@@ -70,10 +59,7 @@ export async function POST(request: NextRequest) {
   // Fingerprint anti-forgery check
   const fpCheck = await checkFingerprintAntiForge(ip, data.fingerprint);
   if (!fpCheck.valid) {
-    return NextResponse.json(
-      { error: fpCheck.error || "指纹验证失败" },
-      { status: 400 }
-    );
+    return errorResponse(fpCheck.error || "指纹验证失败", 400);
   }
 
   // Submit vote
@@ -116,9 +102,6 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Vote submission failed:", error);
-    return NextResponse.json(
-      { error: "服务器内部错误" },
-      { status: 500 }
-    );
+    return errorResponse("服务器内部错误", 500);
   }
 }

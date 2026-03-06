@@ -19,16 +19,10 @@ export async function checkRateLimit(
   const now = Date.now();
   const windowStart = now - windowMs;
 
+  // Step 1: Remove expired entries and count current window
   const multi = redis.multi();
-  // Remove expired entries
   multi.zremrangebyscore(key, 0, windowStart);
-  // Count entries in current window
   multi.zcard(key);
-  // Add current request
-  multi.zadd(key, now, `${now}:${Math.random()}`);
-  // Set TTL
-  multi.pexpire(key, windowMs);
-
   const results = await multi.exec();
   const count = (results?.[1]?.[1] as number) ?? 0;
 
@@ -40,6 +34,9 @@ export async function checkRateLimit(
     return { allowed: false, retryAfter: Math.max(retryAfter, 1) };
   }
 
+  // Step 2: Only add entry if under limit
+  await redis.zadd(key, now, `${now}:${Math.random()}`);
+  await redis.pexpire(key, windowMs);
   return { allowed: true, retryAfter: 0 };
 }
 

@@ -1,17 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useVoteStore } from "@/lib/vote-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-interface OptionItem {
-  id: string;
-  value: string;
-  isPreset: boolean;
-  promoted: boolean;
-}
+import { useOptions } from "@/hooks/use-options";
+import { OptionSelector } from "@/components/vote-form/option-selector";
 
 export function StepOrg() {
   const store = useVoteStore();
@@ -25,23 +20,7 @@ export function StepOrg() {
     city: string;
   } | null>(null);
   const [lookupError, setLookupError] = useState("");
-  const [options, setOptions] = useState<OptionItem[]>([]);
-  const [customInput, setCustomInput] = useState("");
-  const [showCustom, setShowCustom] = useState(false);
-  const [fetchError, setFetchError] = useState("");
-
-  useEffect(() => {
-    fetch("/api/options?layer=org")
-      .then((r) => {
-        if (!r.ok) throw new Error("加载选项失败");
-        return r.json();
-      })
-      .then((d) => {
-        setOptions(d.options || []);
-        setFetchError("");
-      })
-      .catch(() => setFetchError("加载选项失败，请重试"));
-  }, []);
+  const { options, fetchError } = useOptions("org");
 
   const doLookup = async () => {
     setLoading(true);
@@ -77,18 +56,10 @@ export function StepOrg() {
     store.setStep(3);
   };
 
-  const selectFromList = (value: string) => {
+  const selectFromList = (value: string, isCustom: boolean) => {
     store.setField("org", value);
-    store.setField("customOrg", false);
+    store.setField("customOrg", isCustom);
     store.setField("asn", ""); // reset ASN when org changes
-    store.nextStep();
-  };
-
-  const submitCustom = () => {
-    if (!customInput.trim()) return;
-    store.setField("org", customInput.trim());
-    store.setField("customOrg", true);
-    store.setField("asn", "");
     store.nextStep();
   };
 
@@ -137,42 +108,12 @@ export function StepOrg() {
       </TabsContent>
 
       <TabsContent value="list" className="space-y-2 mt-3">
-        {fetchError && (
-          <div className="text-sm text-destructive mb-2">{fetchError}</div>
-        )}
-        <div className="max-h-64 overflow-y-auto space-y-1">
-          {options.map((opt) => (
-            <Button
-              key={opt.id}
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => selectFromList(opt.value)}
-            >
-              {opt.value}
-            </Button>
-          ))}
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-muted-foreground"
-            onClick={() => setShowCustom(true)}
-          >
-            其他（自定义输入）
-          </Button>
-        </div>
-
-        {showCustom && (
-          <div className="flex gap-2 mt-2">
-            <Input
-              placeholder="输入厂商名称"
-              value={customInput}
-              onChange={(e) => setCustomInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submitCustom()}
-            />
-            <Button onClick={submitCustom} disabled={!customInput.trim()}>
-              确定
-            </Button>
-          </div>
-        )}
+        <OptionSelector
+          options={options}
+          fetchError={fetchError}
+          placeholder="输入厂商名称"
+          onSelect={selectFromList}
+        />
       </TabsContent>
     </Tabs>
   );

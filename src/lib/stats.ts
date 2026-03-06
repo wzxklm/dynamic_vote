@@ -1,5 +1,7 @@
 import { prisma, redis } from "./db";
-import { SunburstNode, ExportRow } from "@/types";
+import { SunburstNode } from "@/types";
+export { treeToExportRows } from "./tree-utils";
+import { treeToExportRows } from "./tree-utils";
 
 const CACHE_KEY = "stats:sunburst";
 const CACHE_TTL = 120; // 2 minutes
@@ -14,9 +16,13 @@ interface CachedStats {
  * Get stats from cache or aggregate from DB
  */
 export async function getStats(): Promise<CachedStats> {
-  const cached = await redis.get(CACHE_KEY);
-  if (cached) {
-    return JSON.parse(cached);
+  try {
+    const cached = await redis.get(CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch {
+    // Redis unavailable — fall through to DB aggregation
   }
   const stats = await aggregateStats();
   await redis.setex(CACHE_KEY, CACHE_TTL, JSON.stringify(stats));
@@ -47,7 +53,7 @@ async function aggregateStats(): Promise<CachedStats> {
   const blockedMap = new Map<boolean, Map<string, Map<string, Map<string, Map<string, Map<string, number>>>>>>();
 
   for (const row of proxyRows) {
-    const count = row._sum.count || 0;
+    const count = row._sum.count ?? 0;
     // Skip rows with null protocol/keyConfig — indicates corrupt data for proxy votes
     if (row.protocol == null || row.keyConfig == null) continue;
     total += count;
@@ -57,7 +63,7 @@ async function aggregateStats(): Promise<CachedStats> {
   // For website rows, we store them in the same structure but with no protocol/keyConfig children
   const websiteMap = new Map<boolean, Map<string, Map<string, number>>>();
   for (const row of websiteRows) {
-    const count = row._sum.count || 0;
+    const count = row._sum.count ?? 0;
     total += count;
 
     if (!websiteMap.has(row.isBlocked)) websiteMap.set(row.isBlocked, new Map());
@@ -71,32 +77,32 @@ async function aggregateStats(): Promise<CachedStats> {
   const rootChildren: SunburstNode[] = [];
 
   // Collect all isBlocked values
-  const allBlockedValues: boolean[] = [];
-  Array.from(blockedMap.keys()).forEach((k) => { if (!allBlockedValues.includes(k)) allBlockedValues.push(k); });
-  Array.from(websiteMap.keys()).forEach((k) => { if (!allBlockedValues.includes(k)) allBlockedValues.push(k); });
+  const allBlockedValues = new Set<boolean>();
+  Array.from(blockedMap.keys()).forEach((k) => allBlockedValues.add(k));
+  Array.from(websiteMap.keys()).forEach((k) => allBlockedValues.add(k));
 
-  for (const isBlocked of allBlockedValues) {
+  for (const isBlocked of Array.from(allBlockedValues)) {
     const blockedName = isBlocked ? "被封" : "未被封";
     const orgChildren: SunburstNode[] = [];
 
     // Collect all orgs for this isBlocked value
-    const allOrgsSet = new Map<string, true>();
+    const allOrgsSet = new Set<string>();
     const proxyOrgs = blockedMap.get(isBlocked);
-    if (proxyOrgs) Array.from(proxyOrgs.keys()).forEach((o) => allOrgsSet.set(o, true));
+    if (proxyOrgs) Array.from(proxyOrgs.keys()).forEach((o) => allOrgsSet.add(o));
     const webOrgs = websiteMap.get(isBlocked);
-    if (webOrgs) Array.from(webOrgs.keys()).forEach((o) => allOrgsSet.set(o, true));
+    if (webOrgs) Array.from(webOrgs.keys()).forEach((o) => allOrgsSet.add(o));
 
-    for (const org of Array.from(allOrgsSet.keys())) {
+    for (const org of Array.from(allOrgsSet)) {
       const asnChildren: SunburstNode[] = [];
 
       // Collect all ASNs
-      const allAsnsSet = new Map<string, true>();
+      const allAsnsSet = new Set<string>();
       const proxyAsns = proxyOrgs?.get(org);
-      if (proxyAsns) Array.from(proxyAsns.keys()).forEach((a) => allAsnsSet.set(a, true));
+      if (proxyAsns) Array.from(proxyAsns.keys()).forEach((a) => allAsnsSet.add(a));
       const webAsns = webOrgs?.get(org);
-      if (webAsns) Array.from(webAsns.keys()).forEach((a) => allAsnsSet.set(a, true));
+      if (webAsns) Array.from(webAsns.keys()).forEach((a) => allAsnsSet.add(a));
 
-      for (const asn of Array.from(allAsnsSet.keys())) {
+      for (const asn of Array.from(allAsnsSet)) {
         const usageChildren: SunburstNode[] = [];
 
         // Proxy usage
@@ -108,22 +114,22 @@ async function aggregateStats(): Promise<CachedStats> {
 
         // Website usage
         const webCount = webAsns?.get(asn);
-        if (webCount) {
+        if (webCount != null && webCount > 0) {
           usageChildren.push({ name: "网站", value: webCount });
         }
 
         sortDesc(usageChildren);
-        const asnValue = usageChildren.reduce((s, c) => s + c.value, 0);
+        const asnValue = sumValues(usageChildren);
         asnChildren.push({ name: asn, value: asnValue, children: usageChildren });
       }
 
       sortDesc(asnChildren);
-      const orgValue = asnChildren.reduce((s, c) => s + c.value, 0);
+      const orgValue = sumValues(asnChildren);
       orgChildren.push({ name: org, value: orgValue, children: asnChildren });
     }
 
     sortDesc(orgChildren);
-    const blockedValue = orgChildren.reduce((s, c) => s + c.value, 0);
+    const blockedValue = sumValues(orgChildren);
     rootChildren.push({ name: blockedName, value: blockedValue, children: orgChildren });
   }
 
@@ -158,12 +164,12 @@ function buildProxyUsageNode(
       kcChildren.push({ name: keyConfig, value: count });
     }
     sortDesc(kcChildren);
-    const protoValue = kcChildren.reduce((s, c) => s + c.value, 0);
+    const protoValue = sumValues(kcChildren);
     protocolChildren.push({ name: protocol, value: protoValue, children: kcChildren });
   }
 
   sortDesc(protocolChildren);
-  const totalValue = protocolChildren.reduce((s, c) => s + c.value, 0);
+  const totalValue = sumValues(protocolChildren);
   return { name: "代理", value: totalValue, children: protocolChildren };
 }
 
@@ -190,67 +196,12 @@ function ensurePath(
   kcMap.set(keyConfig, (kcMap.get(keyConfig) || 0) + count);
 }
 
+function sumValues(nodes: SunburstNode[]): number {
+  return nodes.reduce((s, c) => s + c.value, 0);
+}
+
 function sortDesc(nodes: SunburstNode[]) {
   nodes.sort((a, b) => b.value - a.value);
-}
-
-/**
- * Flatten tree into export rows with ratios
- */
-export function treeToExportRows(tree: SunburstNode): ExportRow[] {
-  const total = tree.value;
-  const rows: ExportRow[] = [];
-
-  if (!tree.children) return rows;
-
-  for (const blockedNode of tree.children) {
-    if (!blockedNode.children) continue;
-    for (const orgNode of blockedNode.children) {
-      if (!orgNode.children) continue;
-      for (const asnNode of orgNode.children) {
-        if (!asnNode.children) continue;
-        for (const usageNode of asnNode.children) {
-          if (usageNode.name === "网站") {
-            // Website: leaf at usage level
-            rows.push({
-              isBlocked: blockedNode.name,
-              org: orgNode.name,
-              asn: asnNode.name,
-              usage: "网站",
-              protocol: "-",
-              keyConfig: "-",
-              count: usageNode.value,
-              totalRatio: formatPercent(usageNode.value, total),
-            });
-          } else if (usageNode.children) {
-            // Proxy: expand protocol → keyConfig
-            for (const protoNode of usageNode.children) {
-              if (!protoNode.children) continue;
-              for (const kcNode of protoNode.children) {
-                rows.push({
-                  isBlocked: blockedNode.name,
-                  org: orgNode.name,
-                  asn: asnNode.name,
-                  usage: "代理",
-                  protocol: protoNode.name,
-                  keyConfig: kcNode.name,
-                  count: kcNode.value,
-                  totalRatio: formatPercent(kcNode.value, total),
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return rows;
-}
-
-function formatPercent(part: number, whole: number): string {
-  if (whole === 0) return "0.0%";
-  return ((part / whole) * 100).toFixed(1) + "%";
 }
 
 /**
