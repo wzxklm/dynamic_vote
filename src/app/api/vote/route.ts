@@ -14,9 +14,12 @@ import {
 import { getClientIp, errorResponse } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
+  console.log("[API] POST /vote");
+
   // Request header validation (detect non-browser clients)
   const headerCheck = validateRequestHeaders(request.headers);
   if (!headerCheck.valid) {
+    console.log(`[API] POST /vote rejected: ${headerCheck.error}`);
     return errorResponse(headerCheck.error || "请求特征异常", 400);
   }
 
@@ -50,6 +53,7 @@ export async function POST(request: NextRequest) {
   // Rate limit check
   const rateLimit = await checkVoteRateLimit(ip, data.fingerprint);
   if (!rateLimit.allowed) {
+    console.log(`[RateLimit] vote blocked ip=${ip}`);
     return NextResponse.json(
       { error: "请求过于频繁，请稍后再试", retryAfter: rateLimit.retryAfter },
       { status: 429 }
@@ -84,7 +88,10 @@ export async function POST(request: NextRequest) {
           // Queue unavailable — orphan recovery job will retry asynchronously
         }
 
-        if (!queued) allQueued = false;
+        if (!queued) {
+          console.warn(`[Vote] queue failed voteId=${result.id} layer=${field.layer}`);
+          allQueued = false;
+        }
       }
 
       // If any queue failed, mark the vote so orphan recovery can pick it up
@@ -96,6 +103,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    console.log(`[API] POST /vote → 201 id=${result.id} resolved=${result.resolved} customFields=${result.customFields.length}`);
     return NextResponse.json(
       { id: result.id, resolved: result.resolved },
       { status: 201 }

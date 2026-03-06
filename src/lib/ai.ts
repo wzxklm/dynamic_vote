@@ -41,19 +41,25 @@ async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   opts: {
     delays: number[];
+    label?: string;
     shouldRetryImmediately?: (error: unknown, attempt: number) => boolean;
     transformError?: (error: unknown) => Error;
   }
 ): Promise<T> {
-  const { delays, shouldRetryImmediately, transformError } = opts;
+  const { delays, label, shouldRetryImmediately, transformError } = opts;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
     try {
       return await fn();
     } catch (error) {
-      if (shouldRetryImmediately?.(error, attempt)) continue;
+      if (shouldRetryImmediately?.(error, attempt)) {
+        console.warn(`[AI] ${label || "request"} immediate retry attempt=${attempt + 1}`);
+        continue;
+      }
       if (attempt >= delays.length) {
+        console.warn(`[AI] ${label || "request"} failed after ${attempt + 1} attempts`);
         throw transformError ? transformError(error) : error;
       }
+      console.warn(`[AI] ${label || "request"} retry attempt=${attempt + 1} delay=${delays[attempt]}ms`);
       await new Promise((r) => setTimeout(r, delays[attempt]));
     }
   }
@@ -88,7 +94,12 @@ export async function matchOption(
   candidates: MatchCandidate[],
   userInput: string
 ): Promise<MatchResult> {
-  if (candidates.length === 0) return { matched: false, option_id: null };
+  if (candidates.length === 0) {
+    console.log(`[AI] matchOption layer=${layer} input="${userInput}" → skipped (no candidates)`);
+    return { matched: false, option_id: null };
+  }
+
+  console.log(`[AI] matchOption layer=${layer} input="${userInput}" candidates=${candidates.length}`);
 
   const optionsJson = JSON.stringify(
     candidates.map((c) => ({ id: c.id, value: c.value }))
@@ -126,8 +137,9 @@ ${optionsJson}
     return parsed;
   };
 
-  return retryWithBackoff(makeRequest, {
+  const result = await retryWithBackoff(makeRequest, {
     delays: [2000, 4000, 8000],
+    label: `matchOption(${layer})`,
     shouldRetryImmediately: (error, attempt) => {
       const isJsonError =
         error instanceof SyntaxError ||
@@ -135,6 +147,9 @@ ${optionsJson}
       return isJsonError && attempt === 0;
     },
   });
+
+  console.log(`[AI] matchOption layer=${layer} → matched=${result.matched} option_id=${result.option_id}`);
+  return result;
 }
 
 // --- AI Report Generation ---
@@ -172,6 +187,8 @@ const REPORT_SYSTEM_PROMPT = `你是一名专业的网络安全分析师。你�
  * Retries up to 2 times on failure (3s, 6s delays). 60s timeout.
  */
 export async function generateReport(markdownTable: string): Promise<string> {
+  console.log(`[AI] generateReport dataLength=${markdownTable.length}`);
+
   const userPrompt = `以下是 VPS IP 封锁投票统计数据（Markdown 表格），请据此生成分析报告：\n\n${markdownTable}`;
 
   const makeRequest = async (): Promise<string> => {
@@ -201,15 +218,20 @@ export async function generateReport(markdownTable: string): Promise<string> {
     }
   };
 
-  return retryWithBackoff(makeRequest, {
+  const result = await retryWithBackoff(makeRequest, {
     delays: [3000, 6000],
-    transformError: (error) =>
-      error instanceof Error && error.name === "AbortError"
-        ? new Error("TIMEOUT")
-        : error instanceof Error
-          ? error
-          : new Error("Unknown AI error"),
+    label: "generateReport",
+    transformError: (error) => {
+      if (error instanceof Error && error.name === "AbortError") {
+        console.warn("[AI] generateReport → timeout");
+        return new Error("TIMEOUT");
+      }
+      return error instanceof Error ? error : new Error("Unknown AI error");
+    },
   });
+
+  console.log(`[AI] generateReport → done length=${result.length}`);
+  return result;
 }
 
 // --- AI Option Clustering ---
@@ -247,6 +269,8 @@ export async function clusterOptions(
   layer: string,
   candidates: ClusterCandidate[]
 ): Promise<ClusterResult> {
+  console.log(`[AI] clusterOptions layer=${layer} candidates=${candidates.length}`);
+
   const optionsJson = JSON.stringify(
     candidates.map((c) => ({ id: c.id, value: c.value, submitCount: c.submitCount }))
   );
@@ -279,8 +303,9 @@ ${optionsJson}
     return parsed;
   };
 
-  return retryWithBackoff(makeRequest, {
+  const result = await retryWithBackoff(makeRequest, {
     delays: [2000, 4000, 8000],
+    label: `clusterOptions(${layer})`,
     shouldRetryImmediately: (error, attempt) => {
       const isJsonError =
         error instanceof SyntaxError ||
@@ -288,4 +313,7 @@ ${optionsJson}
       return isJsonError && attempt === 0;
     },
   });
+
+  console.log(`[AI] clusterOptions layer=${layer} → ${result.clusters.length} clusters`);
+  return result;
 }

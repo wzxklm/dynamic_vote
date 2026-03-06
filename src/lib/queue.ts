@@ -60,6 +60,8 @@ function getQueues(): Record<string, Queue<MatchJobData>> {
 async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
   const { voteId, layer, value, parentKey, fingerprint } = job.data;
 
+  console.log(`[Queue] processing voteId=${voteId} layer=${layer} value="${value}"`);
+
   // Get candidate options for this layer + parentKey
   const candidates = await prisma.dynamicOption.findMany({
     where: { layer, parentKey },
@@ -88,6 +90,8 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
         data: { [layerField]: matchedOption.value },
       });
 
+      console.log(`[Queue] matched → normalized to "${matchedOption.value}" optionId=${matchedOption.id}`);
+
       // Deduplicate count
       await deduplicateCount(matchedOption.id, fingerprint);
       optionIdToPromote = matchedOption.id;
@@ -107,6 +111,8 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
       update: {}, // already exists, handle via deduplicateCount
     });
 
+    console.log(`[Queue] no match → created/found option id=${newOption.id} value="${value}"`);
+
     await deduplicateCount(newOption.id, fingerprint);
     optionIdToPromote = newOption.id;
   }
@@ -116,6 +122,8 @@ async function processMatchJob(job: { data: MatchJobData }): Promise<void> {
 
   // Try to resolve the vote
   await tryResolveVote(voteId);
+
+  console.log(`[Queue] done voteId=${voteId} layer=${layer}`);
 }
 
 // --- Initialize workers ---
@@ -159,6 +167,7 @@ function initWorkers(): Record<string, Worker<MatchJobData>> {
 // --- Orphan recovery (repeatable job) ---
 
 async function recoverOrphanVotes(): Promise<void> {
+  console.log("[Queue] orphan recovery started");
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
   const orphanVotes = await prisma.vote.findMany({
@@ -167,6 +176,8 @@ async function recoverOrphanVotes(): Promise<void> {
       createdAt: { lt: tenMinutesAgo },
     },
   });
+
+  console.log(`[Queue] found ${orphanVotes.length} orphan votes`);
 
   for (const vote of orphanVotes) {
     // Re-classify fields
@@ -188,6 +199,7 @@ async function recoverOrphanVotes(): Promise<void> {
       // meaning the original queue job was lost (Redis restart, worker crash, etc.)
       // If option exists (even unpromoted), AI already processed it — don't re-queue.
       if (!option) {
+        console.log(`[Queue] orphan re-queued voteId=${vote.id} layer=${field.layer}`);
         requeued = true;
         await addToMatchQueue({
           voteId: vote.id,
@@ -204,11 +216,14 @@ async function recoverOrphanVotes(): Promise<void> {
       await tryResolveVote(vote.id);
     }
   }
+
+  console.log("[Queue] orphan recovery done");
 }
 
 // --- Option clustering (repeatable job) ---
 
 async function clusterUnpromotedOptions(): Promise<void> {
+  console.log("[Queue] clustering started");
   const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
 
   // Get all unpromoted, non-preset options grouped by layer + parentKey
@@ -234,6 +249,8 @@ async function clusterUnpromotedOptions(): Promise<void> {
     if (group.length < 2) continue;
 
     const { layer, parentKey } = group[0];
+
+    console.log(`[Queue] clustering layer=${layer} parentKey="${parentKey}" options=${group.length}`);
 
     let result;
     try {
@@ -277,6 +294,8 @@ async function clusterUnpromotedOptions(): Promise<void> {
           }
         }
 
+        console.log(`[Queue] merged option "${member.value}" → "${canonical.value}"`);
+
         // Update votes referencing member.value → canonical.value
         const whereClause: Record<string, unknown> = { [layerField]: member.value };
         if (layer === "asn" && parentKey !== "") {
@@ -311,6 +330,8 @@ async function clusterUnpromotedOptions(): Promise<void> {
       await clearOptionCache(layer, parentKey);
     }
   }
+
+  console.log("[Queue] clustering done");
 }
 
 // --- Public API ---
@@ -332,6 +353,7 @@ export async function addToMatchQueue(data: MatchJobData): Promise<boolean> {
       removeOnComplete: 100,
       removeOnFail: 1000,
     });
+    console.log(`[Queue] enqueued voteId=${data.voteId} layer=${data.layer} value="${data.value}"`);
   } catch (err: unknown) {
     // BullMQ rejects duplicate job IDs — this is expected during orphan recovery
     if (
@@ -367,6 +389,8 @@ export function initQueueSystem(): void {
 
   registerRepeatableJob(queues.org, "orphan-recovery", "0 */2 * * *");
   registerRepeatableJob(queues.org, "option-clustering", "0 */2 * * *");
+
+  console.log("[Queue] system initialized");
 }
 
 // Auto-initialize when this module is imported

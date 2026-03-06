@@ -18,14 +18,18 @@ export async function lookupIp(ip: string): Promise<IpLookupResult> {
   const cacheKey = `ip:${ip}`;
   const cached = await redis.get(cacheKey);
   if (cached) {
+    console.log(`[IP] cache hit ip=${ip}`);
     return JSON.parse(cached);
   }
 
   let result: IpLookupResult;
 
   try {
+    console.log(`[IP] primary lookup ip=${ip}`);
     result = await lookupPrimary(ip);
-  } catch {
+  } catch (err) {
+    console.warn(`[IP] primary failed ip=${ip}: ${err instanceof Error ? err.message : err}`);
+    console.log(`[IP] fallback lookup ip=${ip}`);
     result = await lookupFallback(ip);
   }
 

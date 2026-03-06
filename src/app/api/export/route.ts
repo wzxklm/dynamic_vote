@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import { getStats, exportToMarkdown } from "@/lib/stats";
 
 export async function GET() {
+  console.log("[API] GET /export");
   try {
     const stats = await getStats();
     const markdown = exportToMarkdown(stats.tree);
+    console.log(`[API] GET /export → ${markdown.length} bytes`);
     return new NextResponse(markdown, {
       status: 200,
       headers: {

@@ -101,6 +101,8 @@ export async function submitVote(data: VoteFormData): Promise<VoteResult> {
     },
   });
 
+  console.log(`[Vote] created id=${vote.id} org="${data.org}" asn="${data.asn}" usage=${data.usage}`);
+
   const fieldsToCheck = getFieldsToCheck(data);
   const knownIndices = await checkKnownOptions(fieldsToCheck);
   const customFields: { layer: string; value: string; parentKey: string }[] = [];
@@ -111,11 +113,14 @@ export async function submitVote(data: VoteFormData): Promise<VoteResult> {
     }
   }
 
+  console.log(`[Vote] fields: ${fieldsToCheck.length} total, ${knownIndices.size} known, ${customFields.length} custom`);
+
   if (customFields.length === 0) {
     await prisma.vote.update({
       where: { id: vote.id },
       data: { resolved: true },
     });
+    console.log(`[Vote] resolved id=${vote.id} (all fields known)`);
     return { id: vote.id, resolved: true, customFields: [] };
   }
 
@@ -144,7 +149,10 @@ export async function deduplicateCount(
       });
     });
   } catch (error: unknown) {
-    if (isPrismaUniqueViolation(error)) return;
+    if (isPrismaUniqueViolation(error)) {
+      console.log(`[Option] dedup skipped optionId=${optionId} (duplicate fingerprint)`);
+      return;
+    }
     throw error;
   }
 }
@@ -167,6 +175,8 @@ export async function promoteOptionIfNeeded(optionId: string): Promise<void> {
     where: { id: optionId },
   });
   if (!option) return;
+
+  console.log(`[Option] promoted id=${option.id} layer=${option.layer} value="${option.value}"`);
 
   // Clear option cache for this layer
   await clearOptionCache(option.layer, option.parentKey);
@@ -220,6 +230,7 @@ export async function tryResolveVote(voteId: string): Promise<boolean> {
     data: { resolved: true },
   });
 
+  console.log(`[Vote] resolved id=${voteId}`);
   return true;
 }
 
@@ -233,9 +244,7 @@ export async function clearOptionCache(
   layer: string,
   parentKey: string
 ): Promise<void> {
-  if (parentKey) {
-    await redis.del(`options:${layer}:${parentKey}`);
-  } else {
-    await redis.del(`options:${layer}`);
-  }
+  const cacheKey = parentKey ? `options:${layer}:${parentKey}` : `options:${layer}`;
+  await redis.del(cacheKey);
+  console.log(`[Cache] cleared ${cacheKey}`);
 }

@@ -19,11 +19,13 @@ export async function getStats(): Promise<CachedStats> {
   try {
     const cached = await redis.get(CACHE_KEY);
     if (cached) {
+      console.log("[Cache] hit stats:sunburst");
       return JSON.parse(cached);
     }
   } catch {
     // Redis unavailable — fall through to DB aggregation
   }
+  console.log("[Cache] miss stats:sunburst → aggregating");
   const stats = await aggregateStats();
   await redis.setex(CACHE_KEY, CACHE_TTL, JSON.stringify(stats));
   return stats;
@@ -140,6 +142,8 @@ async function aggregateStats(): Promise<CachedStats> {
     value: total,
     children: rootChildren,
   };
+
+  console.log(`[Stats] aggregated ${total} votes (${proxyRows.length} proxy groups, ${websiteRows.length} website groups)`);
 
   return {
     total,

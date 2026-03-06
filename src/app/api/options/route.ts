@@ -32,11 +32,14 @@ export async function GET(request: NextRequest) {
     const cached = await redis.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
+      console.log(`[Cache] hit ${cacheKey}`);
       return NextResponse.json(parsed);
     }
   } catch {
     // Redis unavailable or malformed cache — fall through to database query
   }
+
+  console.log(`[Cache] miss ${cacheKey} → querying DB`);
 
   // Query database
   const options = await prisma.dynamicOption.findMany({
@@ -63,5 +66,6 @@ export async function GET(request: NextRequest) {
     // Redis unavailable — proceed without caching
   }
 
+  console.log(`[API] GET /options layer=${layer} → ${options.length} items`);
   return NextResponse.json(result);
 }

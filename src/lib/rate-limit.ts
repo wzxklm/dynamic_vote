@@ -113,6 +113,7 @@ export async function checkFingerprintAntiForge(
   await redis.pexpire(fpKey, dayMs);
   const fpIpCount = await redis.zcard(fpKey);
   if (fpIpCount > 5) {
+    console.warn(`[RateLimit] anti-forge rejected ip=${ip} reason="fingerprint linked to ${fpIpCount} IPs"`);
     return { valid: false, error: "指纹异常：关联 IP 过多" };
   }
 
@@ -123,6 +124,7 @@ export async function checkFingerprintAntiForge(
   await redis.pexpire(ipKey, dayMs);
   const ipFpCount = await redis.zcard(ipKey);
   if (ipFpCount > 10) {
+    console.warn(`[RateLimit] anti-forge rejected ip=${ip} reason="IP linked to ${ipFpCount} fingerprints"`);
     return { valid: false, error: "IP 异常：关联指纹过多" };
   }
 

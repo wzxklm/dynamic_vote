@@ -31,6 +31,8 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const ip = searchParams.get("ip") || "";
 
+  console.log(`[API] GET /ip-lookup ip=${ip}`);
+
   // Validate IP format
   const parsed = ipLookupSchema.safeParse({ ip });
   if (!parsed.success) {
@@ -51,6 +53,7 @@ export async function GET(request: NextRequest) {
   // Rate limit check (global — shared across all users by design, see docs/modules/rate-limit.md)
   const rateLimit = await checkIpLookupRateLimit();
   if (!rateLimit.allowed) {
+    console.log("[RateLimit] ip-lookup blocked");
     return NextResponse.json(
       { error: "请求过于频繁，请稍后再试", retryAfter: rateLimit.retryAfter },
       { status: 429 }
@@ -59,6 +62,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await lookupIp(parsed.data.ip);
+    console.log(`[IP] lookup result: country=${result.country} org="${result.org}" asn=${result.asn}`);
     return NextResponse.json(result);
   } catch (err) {
     console.error("IP lookup error:", err);

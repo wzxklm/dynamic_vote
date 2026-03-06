@@ -4,8 +4,10 @@ import { NextResponse } from "next/server";
 import { getStats } from "@/lib/stats";
 
 export async function GET() {
+  console.log("[API] GET /stats");
   try {
     const stats = await getStats();
+    console.log(`[API] GET /stats → total=${stats.total}`);
     return NextResponse.json({
       total: stats.total,
       updatedAt: stats.updatedAt,
