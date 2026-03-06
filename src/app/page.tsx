@@ -48,12 +48,15 @@ export default function Home() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-bold">VPS IP 封锁投票统计</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold">
+                  VPS IP 封锁投票统计
+                </h1>
                 <ThemeToggle />
               </div>
               {stats && (
                 <p className="text-sm text-muted-foreground mt-1">
-                  共 {stats.total} 台 · 数据更新于 {formatTimeAgo(stats.updatedAt)}
+                  共 {stats.total} 台 · 数据更新于{" "}
+                  {formatTimeAgo(stats.updatedAt)}
                 </p>
               )}
             </div>
@@ -79,18 +82,18 @@ export default function Home() {
 
         {!loading && !error && stats && (
           <div className="text-sm text-muted-foreground mb-3 rounded-lg border border-dashed p-3 space-y-1">
-            <p><strong>旭日图阅读指南：</strong>从内到外依次为 封锁状态 → 厂商 → ASN → 用途 → 协议 → 关键配置。</p>
+            <p>
+              <strong>旭日图阅读指南：</strong>从内到外依次为 封锁状态 → 厂商 →
+              ASN → 用途 → 协议 → 关键配置。
+            </p>
             <p>鼠标悬停可查看数量与占比，点击扇区可聚焦展开该分支。</p>
           </div>
         )}
       </div>
 
       {!loading && !error && stats && (
-        <div className="w-full px-2">
-          <SunburstChart
-            data={stats.tree.children || []}
-            total={stats.total}
-          />
+        <div className="w-full px-80">
+          <SunburstChart data={stats.tree.children || []} total={stats.total} />
         </div>
       )}
     </main>

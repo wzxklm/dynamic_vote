@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -10,15 +9,6 @@ import { StatsResponse } from "@/types";
 import { formatTimeAgo } from "@/lib/utils";
 import { treeToExportRows } from "@/lib/tree-utils";
 import { useStats } from "@/hooks/use-stats";
-
-const SunburstChart = dynamic(() => import("@/components/sunburst-chart"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-[600px] sm:h-[900px] text-muted-foreground">
-      加载图表中...
-    </div>
-  ),
-});
 
 function StatsTable({ tree }: { tree: StatsResponse["tree"] }) {
   const rows = useMemo(() => treeToExportRows(tree), [tree]);
@@ -80,7 +70,7 @@ function StatsSkeleton() {
           <Skeleton className="h-10 w-24" />
         </div>
       </div>
-      <Skeleton className="h-[600px] sm:h-[900px] w-full rounded-lg" />
+      <Skeleton className="h-[300px] w-full rounded-lg" />
     </div>
   );
 }
@@ -166,19 +156,13 @@ export default function StatsPage() {
       {loading && <StatsSkeleton />}
 
       {error && (
-        <div className="flex items-center justify-center h-[600px] sm:h-[900px] text-destructive">
+        <div className="flex items-center justify-center h-[300px] text-destructive">
           {error}
         </div>
       )}
 
       {!loading && !error && stats && (
-        <>
-          <SunburstChart
-            data={stats.tree.children || []}
-            total={stats.total}
-          />
-          <StatsTable tree={stats.tree} />
-        </>
+        <StatsTable tree={stats.tree} />
       )}
     </main>
   );

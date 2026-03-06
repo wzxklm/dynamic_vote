@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import ReactEChartsCore from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
@@ -30,39 +30,43 @@ const ROOT_COLORS = {
   unblocked: { dark: "#22c55e", light: "#16a34a" },
 };
 
-// Level config: [r0, r, borderWidth, borderRadius, minAngle, fontSize, rotate, align, width]
+// Level config: r0/r as numbers (percent of radius), label width derived from ring width
 const LEVEL_DEFS: Array<{
-  r0: string; r: string; borderWidth: number; borderRadius: number;
+  r0: number; r: number; borderWidth: number; borderRadius: number;
   minAngle: number; fontSize: number; rotate?: 0 | "radial"; align?: "center";
-  width?: number;
 }> = [
-  { r0: "5%",  r: "17%", borderWidth: 3,   borderRadius: 6, minAngle: 5, fontSize: 14, rotate: 0, align: "center" },
-  { r0: "17%", r: "35%", borderWidth: 2,   borderRadius: 4, minAngle: 5, fontSize: 12, rotate: "radial", width: 100 },
-  { r0: "35%", r: "47%", borderWidth: 2,   borderRadius: 3, minAngle: 5, fontSize: 12, rotate: "radial", width: 65 },
-  { r0: "47%", r: "53%", borderWidth: 1.5, borderRadius: 2, minAngle: 3, fontSize: 12, rotate: "radial", width: 50 },
-  { r0: "53%", r: "73%", borderWidth: 1.5, borderRadius: 2, minAngle: 3, fontSize: 12, rotate: "radial", width: 110 },
-  { r0: "73%", r: "93%", borderWidth: 1,   borderRadius: 2, minAngle: 3, fontSize: 12, rotate: "radial", width: 110 },
+  { r0: 5,  r: 17, borderWidth: 3,   borderRadius: 6, minAngle: 5, fontSize: 14, rotate: 0, align: "center" },
+  { r0: 17, r: 35, borderWidth: 2,   borderRadius: 4, minAngle: 5, fontSize: 12, rotate: "radial" },
+  { r0: 35, r: 47, borderWidth: 2,   borderRadius: 3, minAngle: 5, fontSize: 12, rotate: "radial" },
+  { r0: 47, r: 53, borderWidth: 1.5, borderRadius: 2, minAngle: 3, fontSize: 12, rotate: "radial" },
+  { r0: 53, r: 73, borderWidth: 1.5, borderRadius: 2, minAngle: 3, fontSize: 12, rotate: "radial" },
+  { r0: 73, r: 93, borderWidth: 1,   borderRadius: 2, minAngle: 3, fontSize: 12, rotate: "radial" },
 ];
 
-function buildLevels(isDark: boolean) {
+function buildLevels(isDark: boolean, containerWidth: number) {
   const borderColor = isDark ? "#1a1a1a" : "#fff";
   const labelColor = isDark ? "#fff" : "#111";
+  // ECharts sunburst radius percentages are relative to min(width, height) / 2
+  const halfSize = containerWidth / 2;
   return [
     {},
-    ...LEVEL_DEFS.map((def) => ({
-      r0: def.r0,
-      r: def.r,
-      itemStyle: { borderWidth: def.borderWidth, borderColor, borderRadius: def.borderRadius },
-      label: {
-        minAngle: def.minAngle,
-        fontSize: def.fontSize,
-        fontWeight: "bold" as const,
-        color: labelColor,
-        ...(def.rotate !== undefined ? { rotate: def.rotate } : {}),
-        ...(def.align ? { align: def.align } : {}),
-        ...(def.width ? { overflow: "truncate" as const, width: def.width } : {}),
-      },
-    })),
+    ...LEVEL_DEFS.map((def) => {
+      const ringWidth = ((def.r - def.r0) / 100) * halfSize;
+      return {
+        r0: `${def.r0}%`,
+        r: `${def.r}%`,
+        itemStyle: { borderWidth: def.borderWidth, borderColor, borderRadius: def.borderRadius },
+        label: {
+          minAngle: def.minAngle,
+          fontSize: def.fontSize,
+          fontWeight: "bold" as const,
+          color: labelColor,
+          ...(def.rotate !== undefined ? { rotate: def.rotate } : {}),
+          ...(def.align ? { align: def.align } : {}),
+          ...(def.align ? {} : { overflow: "truncate" as const, width: Math.max(20, Math.floor(ringWidth)) }),
+        },
+      };
+    }),
   ];
 }
 
@@ -141,15 +145,21 @@ function colorizeChild(
 
 export default function SunburstChart({ data, total }: SunburstChartProps) {
   const chartRef = useRef<ReactEChartsCore>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
+  const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
-    const handleResize = () => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
       chartRef.current?.getEchartsInstance()?.resize();
     };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
   }, []);
 
   const coloredData = useMemo(() => assignColors(data, isDark), [data, isDark]);
@@ -234,11 +244,11 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
               shadowColor: "rgba(0,0,0,0.3)",
             },
           },
-          levels: buildLevels(isDark),
+          levels: buildLevels(isDark, containerWidth),
         },
       ],
     }),
-    [coloredData, total, isDark],
+    [coloredData, total, isDark, containerWidth],
   );
 
   if (!data || data.length === 0) {
@@ -250,12 +260,14 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
   }
 
   return (
-    <ReactEChartsCore
-      ref={chartRef}
-      echarts={echarts}
-      option={option}
-      style={{ height: "min(1200px, 90vw, 95vh)", width: "100%" }}
-      notMerge={true}
-    />
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <ReactEChartsCore
+        ref={chartRef}
+        echarts={echarts}
+        option={option}
+        style={{ height: containerWidth || "100vw", width: "100%" }}
+        notMerge={true}
+      />
+    </div>
   );
 }
