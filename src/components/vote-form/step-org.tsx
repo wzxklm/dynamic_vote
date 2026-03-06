@@ -71,6 +71,9 @@ export function StepOrg() {
       </TabsList>
 
       <TabsContent value="lookup" className="space-y-3 mt-3">
+        <p className="text-xs text-muted-foreground">
+          输入 VPS 的 IP 地址，自动获取厂商和 ASN 信息。
+        </p>
         <div className="flex gap-2">
           <Input
             placeholder="输入 IP 地址"

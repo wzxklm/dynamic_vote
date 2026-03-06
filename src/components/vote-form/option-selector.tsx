@@ -26,7 +26,33 @@ export function OptionSelector({ options, fetchError, placeholder, onSelect }: O
       {fetchError && (
         <div className="text-sm text-destructive mb-2">{fetchError}</div>
       )}
+      <p className="text-xs text-muted-foreground">
+        找不到匹配项？优先使用「自定义输入」，系统会通过 AI 自动归类到最合适的选项。
+      </p>
       <div className="max-h-64 overflow-y-auto space-y-1">
+        {!showCustom && (
+          <Button
+            variant="outline"
+            className="w-full justify-start text-sm border-dashed border-primary text-primary"
+            onClick={() => setShowCustom(true)}
+          >
+            ✏️ 自定义输入（推荐）
+          </Button>
+        )}
+        {showCustom && (
+          <div className="flex gap-2">
+            <Input
+              autoFocus
+              placeholder={placeholder}
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitCustom()}
+            />
+            <Button onClick={submitCustom} disabled={!customInput.trim()}>
+              确定
+            </Button>
+          </div>
+        )}
         {options.map((opt) => (
           <Button
             key={opt.id}
@@ -37,30 +63,7 @@ export function OptionSelector({ options, fetchError, placeholder, onSelect }: O
             {opt.value}
           </Button>
         ))}
-        {!showCustom && (
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-muted-foreground"
-            onClick={() => setShowCustom(true)}
-          >
-            其他（自定义输入）
-          </Button>
-        )}
       </div>
-
-      {showCustom && (
-        <div className="flex gap-2 mt-2">
-          <Input
-            placeholder={placeholder}
-            value={customInput}
-            onChange={(e) => setCustomInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submitCustom()}
-          />
-          <Button onClick={submitCustom} disabled={!customInput.trim()}>
-            确定
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -9,7 +9,9 @@
       "mcp__browser__fill",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''Stats API: {len\\(d\\)} keys, totalCount={d.get\\(\"\"totalCount\"\", \"\"N/A\"\"\\)}''\\)\")",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f''Options API \\(org\\): {len\\(d.get\\(\"\"options\"\", d\\)\\)} options''\\)\")",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "mcp__browser__wait_for_selector",
+      "mcp__browser__click"
     ]
   },
   "enableAllProjectMcpServers": true,

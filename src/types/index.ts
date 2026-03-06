@@ -20,6 +20,7 @@ export interface SunburstNode {
   name: string;
   value: number;
   children?: SunburstNode[];
+  itemStyle?: { color?: string };
 }
 
 export interface StatsResponse {
