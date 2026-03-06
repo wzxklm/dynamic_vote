@@ -41,6 +41,7 @@ const connection = {
 const globalForQueues = globalThis as unknown as {
   matchQueues: Record<string, Queue<MatchJobData>>;
   matchWorkers: Record<string, Worker<MatchJobData>>;
+  queueSystemInitialized: boolean;
 };
 
 function getQueues(): Record<string, Queue<MatchJobData>> {
@@ -381,26 +382,65 @@ export async function addToMatchQueue(data: MatchJobData): Promise<boolean> {
 }
 
 /**
- * Initialize the queue system: create workers and register orphan recovery.
- * Should be called once at app startup.
+ * Clean up stale scheduled jobs from previous container runs, then register fresh ones.
+ * Runs sequentially to avoid concurrent operations on the same queue.
  */
-function registerRepeatableJob(queue: Queue<MatchJobData>, name: string, pattern: string) {
-  const dummyData: MatchJobData = { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" };
-  queue.add(name, dummyData, {
-    repeat: { pattern },
-    removeOnComplete: 10,
-    removeOnFail: 10,
-  }).catch((err) => {
-    console.error(`[Queue] Failed to register ${name}:`, err);
-  });
+async function cleanAndRegisterRepeatableJobs(queue: Queue<MatchJobData>) {
+  const jobs: Array<{ name: string; pattern: string }> = [
+    { name: "orphan-recovery", pattern: "0 */2 * * *" },
+    { name: "option-clustering", pattern: "0 */2 * * *" },
+  ];
+  const scheduledNames = new Set(jobs.map((j) => j.name));
+
+  try {
+    // 1. Remove all existing repeatable registrations to prevent accumulation across restarts
+    const existingRepeatables = await queue.getRepeatableJobs();
+    for (const rep of existingRepeatables) {
+      if (scheduledNames.has(rep.name)) {
+        await queue.removeRepeatableByKey(rep.key);
+        console.log(`[Queue] removed stale repeatable: ${rep.name}`);
+      }
+    }
+
+    // 2. Drain any pending/delayed scheduled jobs that accumulated from previous runs
+    //    Only target scheduled job names — never touch normal match jobs
+    for (const getter of [queue.getWaiting(), queue.getDelayed()] as const) {
+      const allJobs = await getter;
+      for (const job of allJobs) {
+        if (scheduledNames.has(job.name)) {
+          try {
+            await job.remove();
+          } catch {
+            // Job may already be active/locked — safe to ignore
+          }
+        }
+      }
+    }
+
+    // 3. Register fresh repeatable jobs
+    const dummyData: MatchJobData = { voteId: "", layer: "org", value: "", parentKey: "", fingerprint: "" };
+    for (const { name, pattern } of jobs) {
+      await queue.add(name, dummyData, {
+        repeat: { pattern },
+        removeOnComplete: 10,
+        removeOnFail: 10,
+      });
+      console.log(`[Queue] registered repeatable job: ${name} pattern=${pattern}`);
+    }
+  } catch (err) {
+    console.error("[Queue] Failed to clean/register repeatable jobs:", err);
+  }
 }
 
 export function initQueueSystem(): void {
+  if (globalForQueues.queueSystemInitialized) return;
+  globalForQueues.queueSystemInitialized = true;
+
   const queues = getQueues();
   initWorkers();
 
-  registerRepeatableJob(queues.org, "orphan-recovery", "0 */2 * * *");
-  registerRepeatableJob(queues.org, "option-clustering", "0 */2 * * *");
+  // Run cleanup + registration sequentially (async but fire-and-forget from sync init)
+  cleanAndRegisterRepeatableJobs(queues.org);
 
   console.log("[Queue] system initialized");
 }
