@@ -143,6 +143,7 @@ ${optionsJson}
         maxOutputTokens: 256,
         responseMimeType: "application/json",
         responseJsonSchema: zodToJsonSchema(matchResultSchema),
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
@@ -336,6 +337,7 @@ ${optionsJson}
         maxOutputTokens: clusterMaxTokens,
         responseMimeType: "application/json",
         responseJsonSchema: zodToJsonSchema(clusterResultSchema),
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
