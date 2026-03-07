@@ -91,7 +91,7 @@ export default function ReportPage() {
       : 0;
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 max-w-4xl mx-auto">
+    <main className="min-h-screen p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-2">
           <h1 className="text-2xl sm:text-3xl font-bold">AI 分析报告</h1>

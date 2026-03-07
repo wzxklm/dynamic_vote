@@ -151,15 +151,20 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
   const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
-    const updateWidth = () => {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.clientWidth);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        setContainerWidth(width);
       }
       chartRef.current?.getEchartsInstance()?.resize();
-    };
-    updateWidth();
-    window.addEventListener("resize", updateWidth);
-    return () => window.removeEventListener("resize", updateWidth);
+    });
+    ro.observe(container);
+    setContainerWidth(container.clientWidth);
+
+    return () => ro.disconnect();
   }, []);
 
   const coloredData = useMemo(() => assignColors(data, isDark), [data, isDark]);
@@ -265,7 +270,7 @@ export default function SunburstChart({ data, total }: SunburstChartProps) {
         ref={chartRef}
         echarts={echarts}
         option={option}
-        style={{ height: containerWidth || "100vw", width: "100%" }}
+        style={{ width: "100%", height: containerWidth || 600 }}
         notMerge={true}
       />
     </div>

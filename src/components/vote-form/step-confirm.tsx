@@ -107,7 +107,7 @@ export function StepConfirm() {
           <Button
             className="flex-1"
             onClick={() => {
-              store.reset(true);
+              store.reset();
               setResult(null);
             }}
           >
@@ -116,7 +116,10 @@ export function StepConfirm() {
           <Button
             variant="outline"
             className="flex-1"
-            onClick={() => router.push("/")}
+            onClick={() => {
+              store.reset();
+              router.push("/");
+            }}
           >
             查看统计
           </Button>
